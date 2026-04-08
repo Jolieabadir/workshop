@@ -6,6 +6,7 @@ import { useCanvasStore } from '@/store/canvas-store';
 import { IdeaNode } from './IdeaNode';
 import { ConnectionLine } from './ConnectionLine';
 import { BuilderAvatar } from './BuilderAvatar';
+import { HandCursor } from './HandCursor';
 
 function SceneContent() {
   const nodes = useCanvasStore((s) => s.nodes);
@@ -42,6 +43,9 @@ function SceneContent() {
 
       {/* Builder avatar */}
       <BuilderAvatar />
+
+      {/* Hand cursor (follows hand tracking) */}
+      <HandCursor />
 
       {/* Camera controls */}
       <OrbitControls

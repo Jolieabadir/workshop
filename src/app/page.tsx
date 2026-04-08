@@ -3,11 +3,17 @@
 import dynamic from 'next/dynamic';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
+import { useHandStore } from '@/store/hand-store';
 import { DeepgramClient } from '@/lib/deepgram';
 import type { BuilderAction } from '@/types/canvas';
 
 const Workshop3DCanvas = dynamic(
   () => import('@/components/canvas/Workshop3DCanvas').then((m) => m.Workshop3DCanvas),
+  { ssr: false }
+);
+
+const HandTracker = dynamic(
+  () => import('@/components/canvas/HandTracker').then((m) => m.HandTracker),
   { ssr: false }
 );
 
@@ -27,6 +33,12 @@ export default function Home() {
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
+  const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
+
+  // Hand tracking state
+  const handGesture = useHandStore((s) => s.gesture);
+  const handIsTracking = useHandStore((s) => s.isTracking);
+  const grabbedNodeId = useHandStore((s) => s.grabbedNodeId);
 
   // Deepgram client and transcript state
   const deepgramRef = useRef<DeepgramClient | null>(null);
@@ -139,6 +151,9 @@ export default function Home() {
     <>
       <Workshop3DCanvas />
 
+      {/* Hand Tracker (webcam + MediaPipe) */}
+      {handTrackingEnabled && <HandTracker enabled={handTrackingEnabled} />}
+
       {/* HUD Overlay */}
       <div
         style={{
@@ -196,6 +211,31 @@ export default function Home() {
                 </svg>
               )}
             </button>
+
+            {/* Hand tracking toggle button */}
+            <button
+              onClick={() => setHandTrackingEnabled(!handTrackingEnabled)}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                border: 'none',
+                background: handTrackingEnabled ? '#22c55e' : '#4b5563',
+                color: '#fff',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: handTrackingEnabled ? '0 0 12px rgba(34, 197, 94, 0.5)' : 'none',
+                transition: 'all 0.2s ease',
+              }}
+              title={handTrackingEnabled ? 'Disable hand tracking' : 'Enable hand tracking'}
+            >
+              {/* Hand icon */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18 8.5V5c0-.83-.67-1.5-1.5-1.5S15 4.17 15 5v5h-1V3.5c0-.83-.67-1.5-1.5-1.5S11 2.67 11 3.5v6.5h-1V4c0-.83-.67-1.5-1.5-1.5S7 3.17 7 4v7.5H6V8c0-.83-.67-1.5-1.5-1.5S3 7.17 3 8v7c0 4.14 3.36 7.5 7.5 7.5h2c4.14 0 7.5-3.36 7.5-7.5v-6c0-.83-.67-1.5-1.5-1.5S18 7.67 18 8.5z" />
+              </svg>
+            </button>
             <div
               style={{
                 width: '10px',
@@ -210,8 +250,13 @@ export default function Home() {
                 <span style={{ color: '#ef4444' }}>{micError}</span>
               ) : isListening ? (
                 'Listening...'
+              ) : handTrackingEnabled && handIsTracking ? (
+                <span>
+                  Hand: <span style={{ color: '#22c55e', fontWeight: 600 }}>{handGesture}</span>
+                  {grabbedNodeId && <span style={{ color: '#ff6b9d' }}> (grabbing)</span>}
+                </span>
               ) : (
-                'Press mic to start'
+                'Press mic or enable hand tracking'
               )}
             </span>
           </div>
