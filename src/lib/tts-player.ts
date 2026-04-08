@@ -55,38 +55,9 @@ class TTSPlayer {
     try {
       this.options.onStart?.();
 
-      // Try Deepgram Aura TTS first
-      let played = false;
-
-      try {
-        const response = await fetch('/api/speech/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            voice: this.options.voice || 'aura-asteria-en',
-          }),
-        });
-
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          const audioBuffer = await this.decodeLinear16(arrayBuffer);
-          await this.playAudioBuffer(audioBuffer);
-          played = true;
-        } else {
-          console.warn('[TTS Player] Deepgram failed, falling back to Web Speech API');
-        }
-      } catch (deepgramError) {
-        console.warn('[TTS Player] Deepgram error, falling back to Web Speech API:', deepgramError);
-      }
-
-      // Fallback to Web Speech API if Deepgram failed
-      if (!played) {
-        console.log('[TTS] Using Web Speech API fallback');
-        await this.speakWithWebSpeech(text);
-      } else {
-        console.log('[TTS] Played via Deepgram Aura');
-      }
+      // Use Web Speech API directly (skip Deepgram for now - WAV header issues)
+      console.log('[TTS] Speaking via Web Speech API:', text);
+      await this.speakWithWebSpeech(text);
 
       this.options.onEnd?.();
     } catch (error) {
@@ -145,15 +116,22 @@ class TTSPlayer {
   }
 
   /**
-   * Fallback: use Web Speech API for TTS
+   * Use Web Speech API for TTS
    */
-  private speakWithWebSpeech(text: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-        reject(new Error('Web Speech API not supported'));
-        return;
-      }
+  private async speakWithWebSpeech(text: string): Promise<void> {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      throw new Error('Web Speech API not supported');
+    }
 
+    // Wait for voices to load (they load asynchronously)
+    if (window.speechSynthesis.getVoices().length === 0) {
+      await new Promise<void>((resolve) => {
+        window.speechSynthesis.onvoiceschanged = () => resolve();
+        setTimeout(resolve, 500); // Fallback timeout
+      });
+    }
+
+    return new Promise((resolve, reject) => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
@@ -161,15 +139,23 @@ class TTSPlayer {
 
       // Try to use a good voice if available
       const voices = window.speechSynthesis.getVoices();
+      console.log('[TTS] Available voices:', voices.length);
       const preferredVoice = voices.find(
         (v) => v.lang.startsWith('en') && v.name.includes('Google')
       ) || voices.find((v) => v.lang.startsWith('en'));
       if (preferredVoice) {
+        console.log('[TTS] Using voice:', preferredVoice.name);
         utterance.voice = preferredVoice;
       }
 
-      utterance.onend = () => resolve();
-      utterance.onerror = (e) => reject(new Error(`Speech error: ${e.error}`));
+      utterance.onend = () => {
+        console.log('[TTS] Speech ended');
+        resolve();
+      };
+      utterance.onerror = (e) => {
+        console.error('[TTS] Speech error:', e.error);
+        reject(new Error(`Speech error: ${e.error}`));
+      };
 
       window.speechSynthesis.speak(utterance);
     });

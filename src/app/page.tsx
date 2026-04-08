@@ -210,6 +210,7 @@ export default function Home() {
       const data = await response.json();
       const actions: BuilderAction[] = data.actions || [];
       console.log('[PIPELINE] 3. Received actions from Builder:', actions.length, actions.map(a => a.type));
+      console.log('[PIPELINE] TTS ACTIONS:', actions.filter(a => a.type === 'respond_verbally'));
 
       // Execute each action
       for (const action of actions) {
