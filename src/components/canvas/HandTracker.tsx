@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { useHandStore } from '@/store/hand-store';
-import type { Vec3, HandGesture } from '@/types/canvas';
+import type { HandGesture } from '@/types/canvas';
 
 // MediaPipe hand landmark indices
 const THUMB_TIP = 4;
@@ -12,28 +12,13 @@ const MIDDLE_TIP = 12;
 const RING_TIP = 16;
 const PINKY_TIP = 20;
 const WRIST = 0;
-const INDEX_MCP = 5;
-const MIDDLE_MCP = 9; // Palm center landmark
-const PINKY_MCP = 17;
 
 // Gesture thresholds
-const PINCH_THRESHOLD = 0.08;
-const OPEN_PALM_THRESHOLD = 0.15;
+const PINCH_THRESHOLD = 0.07;
+const OPEN_PALM_THRESHOLD = 0.12;
 
-// Camera control sensitivity
-const CAMERA_AZIMUTH_SENSITIVITY = 2.0;
-const CAMERA_POLAR_SENSITIVITY = 1.5;
-const CAMERA_ZOOM_SENSITIVITY = 3.0;
-const CAMERA_DEADZONE = 0.1; // Center deadzone where no movement occurs
-
-// Smoothing factor for EMA (exponential moving average)
-// position = alpha * newPos + (1-alpha) * lastPos
-// Lower alpha = smoother but more latency, higher = responsive but jittery
-const SMOOTHING_ALPHA = 0.15;
-
-// Maximum allowed landmark jump between frames (in normalized screen space)
-// Jumps larger than this are likely detection resets, not real movement
-const MAX_LANDMARK_JUMP = 0.15;
+// Smoothing factor for EMA (lower = smoother)
+const SMOOTHING_ALPHA = 0.25;
 
 interface HandTrackerProps {
   enabled?: boolean;
@@ -46,74 +31,17 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   const animationFrameRef = useRef<number>(0);
   const lastVideoTimeRef = useRef<number>(-1);
 
-  // Track previous palm positions for delta calculation
-  const prevLeftPalmRef = useRef<{ x: number; y: number; z: number } | null>(null);
-
-  // Track previous pinch distance for zoom delta calculation
-  const prevLeftPinchRef = useRef<number | null>(null);
-
-  // Smoothed landmarks for each hand (EMA smoothing to kill jitter)
-  const smoothedLeftLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
-  const smoothedRightLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
-
-  // Previous raw landmarks for velocity check (detect jumps from detection resets)
-  const prevRawLeftLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
-  const prevRawRightLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
+  // Smoothed landmarks
+  const smoothedLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Hand store actions
   const setTracking = useHandStore((s) => s.setTracking);
-  const setLeftHand = useHandStore((s) => s.setLeftHand);
-  const setLeftHandDetected = useHandStore((s) => s.setLeftHandDetected);
   const setRightHand = useHandStore((s) => s.setRightHand);
   const setRightHandDetected = useHandStore((s) => s.setRightHandDetected);
-  const setCameraControl = useHandStore((s) => s.setCameraControl);
   const reset = useHandStore((s) => s.reset);
-
-  const leftHandGesture = useHandStore((s) => s.leftHand.gesture);
-  const rightHandGesture = useHandStore((s) => s.rightHand.gesture);
-
-  // Check if landmarks jumped too much (detection reset)
-  // Returns true if any landmark moved more than MAX_LANDMARK_JUMP in x or y
-  const hasLandmarkJump = useCallback((
-    newLandmarks: { x: number; y: number; z: number }[],
-    prevLandmarks: { x: number; y: number; z: number }[] | null
-  ): boolean => {
-    if (!prevLandmarks) return false; // First frame, no jump
-
-    for (let i = 0; i < newLandmarks.length && i < prevLandmarks.length; i++) {
-      const dx = Math.abs(newLandmarks[i].x - prevLandmarks[i].x);
-      const dy = Math.abs(newLandmarks[i].y - prevLandmarks[i].y);
-      if (dx > MAX_LANDMARK_JUMP || dy > MAX_LANDMARK_JUMP) {
-        return true;
-      }
-    }
-    return false;
-  }, []);
-
-  // Apply EMA smoothing to landmarks: smoothed = alpha * new + (1-alpha) * prev
-  const smoothLandmarks = useCallback((
-    newLandmarks: { x: number; y: number; z: number }[],
-    prevSmoothed: { x: number; y: number; z: number }[] | null,
-    alpha: number = SMOOTHING_ALPHA
-  ): { x: number; y: number; z: number }[] => {
-    if (!prevSmoothed) {
-      // First frame - no previous data, use raw
-      return newLandmarks.map(lm => ({ ...lm }));
-    }
-
-    // Apply EMA to each landmark
-    return newLandmarks.map((lm, i) => {
-      const prev = prevSmoothed[i];
-      return {
-        x: alpha * lm.x + (1 - alpha) * prev.x,
-        y: alpha * lm.y + (1 - alpha) * prev.y,
-        z: alpha * lm.z + (1 - alpha) * prev.z,
-      };
-    });
-  }, []);
 
   // Calculate distance between two landmarks
   const landmarkDistance = useCallback((
@@ -133,13 +61,14 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   // Detect gesture from hand landmarks
   const detectGesture = useCallback((
     landmarks: { x: number; y: number; z: number }[]
-  ): { gesture: HandGesture; pinchDist: number } => {
+  ): HandGesture => {
     const pinchDist = landmarkDistance(landmarks, THUMB_TIP, INDEX_TIP);
 
     if (pinchDist < PINCH_THRESHOLD) {
-      return { gesture: 'pinch', pinchDist };
+      return 'pinch';
     }
 
+    // Check for open palm (fingers spread)
     const thumbIndex = landmarkDistance(landmarks, THUMB_TIP, INDEX_TIP);
     const indexMiddle = landmarkDistance(landmarks, INDEX_TIP, MIDDLE_TIP);
     const middleRing = landmarkDistance(landmarks, MIDDLE_TIP, RING_TIP);
@@ -147,239 +76,92 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
 
     const avgFingerSpread = (thumbIndex + indexMiddle + middleRing + ringPinky) / 4;
     if (avgFingerSpread > OPEN_PALM_THRESHOLD) {
-      return { gesture: 'open_palm', pinchDist };
+      return 'open_palm';
     }
 
+    // Check for pointing (index extended, others curled)
     const indexExtended = landmarks[INDEX_TIP].y < landmarks[WRIST].y;
     const middleCurled = landmarks[MIDDLE_TIP].y > landmarks[INDEX_TIP].y + 0.05;
     const ringCurled = landmarks[RING_TIP].y > landmarks[INDEX_TIP].y + 0.05;
 
     if (indexExtended && middleCurled && ringCurled) {
-      return { gesture: 'point', pinchDist };
+      return 'point';
     }
 
-    const allCurled =
-      landmarks[INDEX_TIP].y > landmarks[WRIST].y - 0.1 &&
-      landmarks[MIDDLE_TIP].y > landmarks[WRIST].y - 0.1 &&
-      landmarks[RING_TIP].y > landmarks[WRIST].y - 0.1 &&
-      landmarks[PINKY_TIP].y > landmarks[WRIST].y - 0.1;
-
-    if (allCurled) {
-      return { gesture: 'fist', pinchDist };
-    }
-
-    return { gesture: 'none', pinchDist };
+    return 'none';
   }, [landmarkDistance]);
 
-  // Calculate palm center from landmarks (use MIDDLE_MCP as primary reference)
-  const getPalmCenter = useCallback((
-    landmarks: { x: number; y: number; z: number }[]
-  ): { x: number; y: number; z: number } => {
-    // Landmark 9 (MIDDLE_MCP) is the center of the palm
-    return { ...landmarks[MIDDLE_MCP] };
-  }, []);
+  // Apply EMA smoothing
+  const smoothLandmarks = useCallback((
+    newLandmarks: { x: number; y: number; z: number }[],
+    prevSmoothed: { x: number; y: number; z: number }[] | null
+  ): { x: number; y: number; z: number }[] => {
+    if (!prevSmoothed) {
+      return newLandmarks.map(lm => ({ ...lm }));
+    }
 
-  // Map screen position to 3D world position (smaller ranges to reduce jumps)
-  const screenTo3D = useCallback((screenX: number, screenY: number): Vec3 => {
-    return {
-      x: (1 - screenX) * 8 - 4,
-      y: (1 - screenY) * 3 + 0.5,
-      z: 1.5,
-    };
-  }, []);
-
-  // Process LEFT HAND for camera navigation
-  const processLeftHand = useCallback((
-    landmarks: { x: number; y: number; z: number }[]
-  ) => {
-    const palmCenter = getPalmCenter(landmarks);
-    const { gesture, pinchDist } = detectGesture(landmarks);
-    const screenPos = { x: palmCenter.x, y: palmCenter.y };
-
-    setLeftHand({
-      isDetected: true,
-      screenPosition: screenPos,
-      palmCenter: screenPos,
-      gesture,
-      pinchDistance: pinchDist,
+    return newLandmarks.map((lm, i) => {
+      const prev = prevSmoothed[i];
+      return {
+        x: SMOOTHING_ALPHA * lm.x + (1 - SMOOTHING_ALPHA) * prev.x,
+        y: SMOOTHING_ALPHA * lm.y + (1 - SMOOTHING_ALPHA) * prev.y,
+        z: SMOOTHING_ALPHA * lm.z + (1 - SMOOTHING_ALPHA) * prev.z,
+      };
     });
+  }, []);
 
-    // OPEN PALM = Camera orbit control (azimuth + polar)
-    if (gesture === 'open_palm') {
-      // Calculate delta from center (0.5, 0.5)
-      const centerX = 0.5;
-      const centerY = 0.5;
-      const deltaX = palmCenter.x - centerX;
-      const deltaY = palmCenter.y - centerY;
-
-      // Store palm position for reference
-      prevLeftPalmRef.current = { ...palmCenter };
-      prevLeftPinchRef.current = null; // Reset pinch tracking
-
-      // Apply deadzone
-      const azimuthDelta = Math.abs(deltaX) > CAMERA_DEADZONE
-        ? deltaX * CAMERA_AZIMUTH_SENSITIVITY
-        : 0;
-      const polarDelta = Math.abs(deltaY) > CAMERA_DEADZONE
-        ? -deltaY * CAMERA_POLAR_SENSITIVITY // Invert Y for natural feel
-        : 0;
-
-      setCameraControl({
-        azimuthDelta,
-        polarDelta,
-        zoomDelta: 0,
-        isActive: true,
-      });
-    }
-    // PINCH = Camera zoom control
-    else if (gesture === 'pinch') {
-      let zoomDelta = 0;
-
-      if (prevLeftPinchRef.current !== null) {
-        // Calculate zoom from pinch distance change
-        // Opening fingers (increasing distance) = zoom out
-        // Closing fingers (decreasing distance) = zoom in
-        const pinchDelta = pinchDist - prevLeftPinchRef.current;
-        if (Math.abs(pinchDelta) > 0.005) {
-          zoomDelta = -pinchDelta * CAMERA_ZOOM_SENSITIVITY * 10;
-        }
-      }
-      prevLeftPinchRef.current = pinchDist;
-      prevLeftPalmRef.current = null; // Reset palm tracking
-
-      setCameraControl({
-        azimuthDelta: 0,
-        polarDelta: 0,
-        zoomDelta,
-        isActive: zoomDelta !== 0,
-      });
-    }
-    // Other gestures - stop camera control
-    else {
-      prevLeftPalmRef.current = null;
-      prevLeftPinchRef.current = null;
-      setCameraControl({
-        azimuthDelta: 0,
-        polarDelta: 0,
-        zoomDelta: 0,
-        isActive: false,
-      });
-    }
-  }, [getPalmCenter, detectGesture, setLeftHand, setCameraControl]);
-
-  // Process RIGHT HAND - only update hand store with position/gesture
-  // Node interaction is handled by HandCursor via raycasting
-  const processRightHand = useCallback((
+  // Process detected hand
+  const processHand = useCallback((
     landmarks: { x: number; y: number; z: number }[]
   ) => {
-    const indexTip = landmarks[INDEX_TIP];
-    const screenPos = { x: indexTip.x, y: indexTip.y };
-    const pos3D = screenTo3D(indexTip.x, indexTip.y);
-    const { gesture, pinchDist } = detectGesture(landmarks);
+    // Smooth the landmarks
+    const smoothed = smoothLandmarks(landmarks, smoothedLandmarksRef.current);
+    smoothedLandmarksRef.current = smoothed;
 
+    // Get index finger tip for cursor position
+    const indexTip = smoothed[INDEX_TIP];
+    const screenPos = { x: indexTip.x, y: indexTip.y };
+
+    // Detect gesture
+    const gesture = detectGesture(smoothed);
+
+    // Update hand store - only screenPosition and gesture matter for HandCursor
     setRightHand({
       isDetected: true,
       screenPosition: screenPos,
-      position: pos3D,
       gesture,
-      pinchDistance: pinchDist,
     });
-  }, [screenTo3D, detectGesture, setRightHand]);
+  }, [smoothLandmarks, detectGesture, setRightHand]);
 
-  // Process hand landmarks and update state
+  // Process results from MediaPipe
   const processResults = useCallback((results: HandLandmarkerResult) => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
 
     if (!canvas || !ctx) return;
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Track which hands were detected this frame
-    let leftDetected = false;
-    let rightDetected = false;
+    // Use first detected hand (any hand)
+    if (results.landmarks && results.landmarks.length > 0) {
+      const landmarks = results.landmarks[0];
+      processHand(landmarks);
 
-    if (results.landmarks && results.landmarks.length > 0 && results.handednesses) {
-      for (let i = 0; i < results.landmarks.length; i++) {
-        const rawLandmarks = results.landmarks[i];
-        const handedness = results.handednesses[i]?.[0];
-
-        if (!handedness) continue;
-
-        // MediaPipe returns "Left" or "Right" from the camera's perspective
-        // Since we mirror the video, we swap them for the user's perspective
-        const isLeftHand = handedness.categoryName === 'Right'; // Swapped due to mirror
-        const isRightHand = handedness.categoryName === 'Left';
-
-        if (isLeftHand) {
-          leftDetected = true;
-          // Velocity check: skip frame if landmarks jumped too much (detection reset)
-          if (hasLandmarkJump(rawLandmarks, prevRawLeftLandmarksRef.current)) {
-            // Store raw landmarks but don't update state this frame
-            prevRawLeftLandmarksRef.current = rawLandmarks.map(lm => ({ ...lm }));
-            continue;
-          }
-          prevRawLeftLandmarksRef.current = rawLandmarks.map(lm => ({ ...lm }));
-          // Apply EMA smoothing to reduce jitter
-          const smoothed = smoothLandmarks(rawLandmarks, smoothedLeftLandmarksRef.current);
-          smoothedLeftLandmarksRef.current = smoothed;
-          processLeftHand(smoothed);
-          drawHandLandmarks(ctx, smoothed, canvas.width, canvas.height, leftHandGesture, 'Left');
-        } else if (isRightHand) {
-          rightDetected = true;
-          // Velocity check: skip frame if landmarks jumped too much (detection reset)
-          if (hasLandmarkJump(rawLandmarks, prevRawRightLandmarksRef.current)) {
-            // Store raw landmarks but don't update state this frame
-            prevRawRightLandmarksRef.current = rawLandmarks.map(lm => ({ ...lm }));
-            continue;
-          }
-          prevRawRightLandmarksRef.current = rawLandmarks.map(lm => ({ ...lm }));
-          // Apply EMA smoothing to reduce jitter
-          const smoothed = smoothLandmarks(rawLandmarks, smoothedRightLandmarksRef.current);
-          smoothedRightLandmarksRef.current = smoothed;
-          processRightHand(smoothed);
-          drawHandLandmarks(ctx, smoothed, canvas.width, canvas.height, rightHandGesture, 'Right');
-        }
-      }
-    }
-
-    // Update detection state for hands not seen this frame
-    if (!leftDetected) {
-      setLeftHandDetected(false);
-      setCameraControl({ isActive: false, azimuthDelta: 0, polarDelta: 0, zoomDelta: 0 });
-      prevLeftPalmRef.current = null;
-      smoothedLeftLandmarksRef.current = null; // Reset smoothing state
-      prevRawLeftLandmarksRef.current = null; // Reset velocity check state
-    }
-    if (!rightDetected) {
+      // Draw hand visualization
+      drawHand(ctx, landmarks, canvas.width, canvas.height);
+    } else {
+      // No hand detected
       setRightHandDetected(false);
-      // Note: HandCursor handles clearing grabbed/hovered state via raycasting
-      smoothedRightLandmarksRef.current = null; // Reset smoothing state
-      prevRawRightLandmarksRef.current = null; // Reset velocity check state
+      smoothedLandmarksRef.current = null;
     }
-  }, [processLeftHand, processRightHand, smoothLandmarks, hasLandmarkJump, leftHandGesture, rightHandGesture, setLeftHandDetected, setRightHandDetected, setCameraControl]);
+  }, [processHand, setRightHandDetected]);
 
-  // Draw hand landmarks with gesture visualization
-  const drawHandLandmarks = (
+  // Draw hand landmarks
+  const drawHand = (
     ctx: CanvasRenderingContext2D,
     landmarks: { x: number; y: number; z: number }[],
     width: number,
-    height: number,
-    currentGesture: HandGesture,
-    hand: 'Left' | 'Right'
+    height: number
   ) => {
-    const gestureColors: Record<HandGesture, string> = {
-      none: '#ffffff',
-      point: '#00ff88',
-      pinch: '#ff6b9d',
-      open_palm: '#6c63ff',
-      fist: '#ff9500',
-    };
-
-    // Different base colors for left (blue tint) vs right (red tint)
-    const handTint = hand === 'Left' ? '#4a9eff' : '#ff6b9d';
-    const color = currentGesture !== 'none' ? gestureColors[currentGesture] : handTint;
-
     const connections = [
       [0, 1], [1, 2], [2, 3], [3, 4],
       [0, 5], [5, 6], [6, 7], [7, 8],
@@ -389,7 +171,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       [5, 9], [9, 13], [13, 17],
     ];
 
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = '#00ff88';
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.8;
 
@@ -402,52 +184,32 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       ctx.stroke();
     }
 
-    ctx.fillStyle = color;
-    for (let i = 0; i < landmarks.length; i++) {
-      const lm = landmarks[i];
-      const radius = i === INDEX_TIP && hand === 'Right' ? 6 : 3;
+    // Draw points
+    ctx.fillStyle = '#00ff88';
+    for (const lm of landmarks) {
       ctx.beginPath();
-      ctx.arc(lm.x * width, lm.y * height, radius, 0, Math.PI * 2);
+      ctx.arc(lm.x * width, lm.y * height, 3, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Draw palm center indicator for left hand (using landmark 9 - MIDDLE_MCP)
-    if (hand === 'Left') {
-      const palmCenter = landmarks[MIDDLE_MCP];
-
-      ctx.beginPath();
-      ctx.arc(palmCenter.x * width, palmCenter.y * height, 8, 0, Math.PI * 2);
-      ctx.strokeStyle = '#4a9eff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    // Right hand - highlight index tip
-    if (hand === 'Right') {
-      const indexTip = landmarks[INDEX_TIP];
-      ctx.beginPath();
-      ctx.arc(indexTip.x * width, indexTip.y * height, 10, 0, Math.PI * 2);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    // Draw hand label
-    const labelX = hand === 'Left' ? 8 : width - 40;
-    ctx.fillStyle = handTint;
-    ctx.font = 'bold 10px sans-serif';
-    ctx.fillText(hand === 'Left' ? 'L' : 'R', labelX, 14);
+    // Highlight index finger tip
+    const indexTip = landmarks[INDEX_TIP];
+    ctx.beginPath();
+    ctx.arc(indexTip.x * width, indexTip.y * height, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ff6b9d';
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
     ctx.globalAlpha = 1;
   };
 
-  // Initialize MediaPipe HandLandmarker with aggressive re-detection settings
+  // Initialize MediaPipe
   useEffect(() => {
     if (!enabled) return;
 
     let mounted = true;
 
-    const initializeHandLandmarker = async () => {
+    const init = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
@@ -459,11 +221,10 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
             delegate: 'GPU',
           },
           runningMode: 'VIDEO',
-          numHands: 2, // Track both hands
-          // Aggressive re-detection for orientation issues
-          minHandDetectionConfidence: 0.6,
+          numHands: 1, // Only track one hand
+          minHandDetectionConfidence: 0.5,
           minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.3, // Lower to re-detect more aggressively
+          minTrackingConfidence: 0.5,
         });
 
         if (mounted) {
@@ -472,13 +233,11 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
         }
       } catch (err) {
         console.error('Failed to initialize HandLandmarker:', err);
-        if (mounted) {
-          setError('Failed to load hand tracking model');
-        }
+        if (mounted) setError('Failed to load hand tracking');
       }
     };
 
-    initializeHandLandmarker();
+    init();
 
     return () => {
       mounted = false;
@@ -486,7 +245,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     };
   }, [enabled]);
 
-  // Start webcam and tracking loop
+  // Start webcam and detection loop
   useEffect(() => {
     if (!enabled || !isInitialized) return;
 
@@ -495,11 +254,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     const startWebcam = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            facingMode: 'user',
-          },
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         });
 
         if (!mounted || !videoRef.current) return;
@@ -512,10 +267,8 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
           if (!mounted || !videoRef.current || !handLandmarkerRef.current) return;
 
           const video = videoRef.current;
-          const currentTime = video.currentTime;
-
-          if (currentTime !== lastVideoTimeRef.current && video.readyState >= 2) {
-            lastVideoTimeRef.current = currentTime;
+          if (video.currentTime !== lastVideoTimeRef.current && video.readyState >= 2) {
+            lastVideoTimeRef.current = video.currentTime;
             const results = handLandmarkerRef.current.detectForVideo(video, performance.now());
             processResults(results);
           }
@@ -526,9 +279,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
         detectLoop();
       } catch (err) {
         console.error('Failed to start webcam:', err);
-        if (mounted) {
-          setError('Camera access denied');
-        }
+        if (mounted) setError('Camera access denied');
       }
     };
 
@@ -537,39 +288,30 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     return () => {
       mounted = false;
       cancelAnimationFrame(animationFrameRef.current);
-
       const video = videoRef.current;
       if (video?.srcObject) {
-        const tracks = (video.srcObject as MediaStream).getTracks();
-        tracks.forEach((track) => track.stop());
+        (video.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       }
-
       reset();
     };
   }, [enabled, isInitialized, setTracking, processResults, reset]);
 
-  // Sync canvas size with video
+  // Sync canvas size
   useEffect(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-
     if (video && canvas) {
       const updateSize = () => {
         canvas.width = video.videoWidth || 320;
         canvas.height = video.videoHeight || 240;
       };
-
       video.addEventListener('loadedmetadata', updateSize);
       updateSize();
-
       return () => video.removeEventListener('loadedmetadata', updateSize);
     }
   }, []);
 
   if (!enabled) return null;
-
-  const leftDetected = useHandStore.getState().leftHand.isDetected;
-  const rightDetected = useHandStore.getState().rightHand.isDetected;
 
   return (
     <div
@@ -596,7 +338,6 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
         playsInline
         muted
       />
-
       <canvas
         ref={canvasRef}
         style={{
@@ -609,7 +350,6 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
           pointerEvents: 'none',
         }}
       />
-
       {/* Status indicator */}
       <div
         style={{
@@ -620,48 +360,8 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
           height: '8px',
           borderRadius: '50%',
           background: error ? '#ef4444' : isInitialized ? '#22c55e' : '#f59e0b',
-          boxShadow: `0 0 6px ${error ? '#ef4444' : isInitialized ? '#22c55e' : '#f59e0b'}`,
         }}
       />
-
-      {/* Hand indicators */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '4px',
-          left: '4px',
-          display: 'flex',
-          gap: '4px',
-        }}
-      >
-        {/* Left hand indicator */}
-        <div
-          style={{
-            padding: '2px 6px',
-            borderRadius: '4px',
-            background: leftDetected ? 'rgba(74, 158, 255, 0.8)' : 'rgba(0,0,0,0.5)',
-            color: '#fff',
-            fontSize: '9px',
-            fontWeight: 600,
-          }}
-        >
-          L
-        </div>
-        {/* Right hand indicator */}
-        <div
-          style={{
-            padding: '2px 6px',
-            borderRadius: '4px',
-            background: rightDetected ? 'rgba(255, 107, 157, 0.8)' : 'rgba(0,0,0,0.5)',
-            color: '#fff',
-            fontSize: '9px',
-            fontWeight: 600,
-          }}
-        >
-          R
-        </div>
-      </div>
-
       {error && (
         <div
           style={{

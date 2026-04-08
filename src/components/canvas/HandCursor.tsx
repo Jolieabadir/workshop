@@ -15,147 +15,150 @@ const GESTURE_COLORS: Record<string, THREE.Color> = {
   fist: new THREE.Color('#ff9500'),
 };
 
+// Distance from camera to place cursor/dragged objects
+const INTERACTION_DEPTH = 5;
+
 export function HandCursor() {
   const meshRef = useRef<THREE.Mesh>(null);
   const glowRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial>(null);
   const glowMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
 
-  // Get camera and scene for raycasting
+  // Get camera and scene for raycasting - this works because we're inside Canvas
   const { camera, scene } = useThree();
-  const raycaster = useRef(new THREE.Raycaster());
-  const pointer = useRef(new THREE.Vector2());
 
-  // Use right hand for cursor (interaction hand)
-  const rightHand = useHandStore((s) => s.rightHand);
-  const grabbedNodeId = useHandStore((s) => s.grabbedNodeId);
-  const isTracking = useHandStore((s) => s.isTracking);
+  // Raycaster for detecting node intersections
+  const raycasterRef = useRef(new THREE.Raycaster());
 
-  const position = rightHand.position;
-  const screenPosition = rightHand.screenPosition;
-  const gesture = rightHand.gesture;
-  const isDetected = rightHand.isDetected;
-
-  // Smoothed position for lerping
-  const smoothedPos = useRef(new THREE.Vector3(0, 2, 2));
-  const targetPos = useRef(new THREE.Vector3(0, 2, 2));
+  // Smoothed cursor position for visual smoothness
+  const smoothedPos = useRef(new THREE.Vector3(0, 2, 5));
 
   useFrame((_, delta) => {
     if (!meshRef.current || !glowRef.current) return;
 
-    // Update target position
-    if (position) {
-      targetPos.current.set(position.x, position.y, position.z);
-    }
+    // Get hand state from store
+    const handStore = useHandStore.getState();
+    const canvasStore = useCanvasStore.getState();
 
-    // Smooth lerp to target
-    smoothedPos.current.lerp(targetPos.current, delta * 12);
-    meshRef.current.position.copy(smoothedPos.current);
-    glowRef.current.position.copy(smoothedPos.current);
+    const { rightHand, isTracking, grabbedNodeId, hoveredNodeId } = handStore;
+    const { screenPosition, gesture, isDetected } = rightHand;
 
-    // Update color based on gesture
-    const targetColor = GESTURE_COLORS[gesture] || GESTURE_COLORS.none;
-
-    if (materialRef.current) {
-      materialRef.current.color.lerp(targetColor, delta * 8);
-      materialRef.current.emissive.lerp(targetColor, delta * 8);
-
-      // Pulse intensity when grabbing
-      const baseIntensity = grabbedNodeId ? 1.2 : 0.6;
-      const pulse = Math.sin(Date.now() * 0.008) * 0.2;
-      materialRef.current.emissiveIntensity = baseIntensity + (grabbedNodeId ? pulse : 0);
-    }
-
-    if (glowMaterialRef.current) {
-      glowMaterialRef.current.color.lerp(targetColor, delta * 8);
-
-      // Pulsing opacity
-      const basOpacity = gesture === 'pinch' ? 0.4 : 0.2;
-      const pulse = Math.sin(Date.now() * 0.006) * 0.1;
-      glowMaterialRef.current.opacity = basOpacity + pulse;
-    }
-
-    // Scale based on gesture
-    const targetScale = gesture === 'pinch' ? 1.3 : gesture === 'open_palm' ? 1.5 : 1;
-    meshRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), delta * 10);
-
-    // Glow scale follows with larger multiplier
-    const glowScale = targetScale * 2.5;
-    glowRef.current.scale.lerp(new THREE.Vector3(glowScale, glowScale, glowScale), delta * 8);
-
-    // Hide if right hand not detected or no position
-    const visible = isTracking && isDetected && position !== null;
+    // Hide cursor if hand not detected
+    const visible = isTracking && isDetected && screenPosition !== null;
     meshRef.current.visible = visible;
     glowRef.current.visible = visible;
 
-    // --- Raycasting for node interaction ---
-    if (!isDetected || !screenPosition) return;
+    if (!visible || !screenPosition) return;
 
-    // Convert screen position (0-1) to normalized device coordinates (-1 to 1)
-    // Formula: x * 2 - 1 maps [0,1] to [-1,1]
-    // Y is inverted because screen Y increases downward, NDC Y increases upward
+    // === RAYCASTING ===
+    // Convert screen position (0-1) to NDC (-1 to 1)
+    // X is negated because webcam is mirrored
     const ndc = new THREE.Vector2(
-      screenPosition.x * 2 - 1,
+      -(screenPosition.x * 2 - 1),
       -(screenPosition.y * 2 - 1)
     );
 
-    // Update raycaster from camera
-    raycaster.current.setFromCamera(ndc, camera);
+    // Set up raycaster from camera through the NDC point
+    raycasterRef.current.setFromCamera(ndc, camera);
 
-    // Intersect all scene objects recursively
-    const intersects = raycaster.current.intersectObjects(scene.children, true);
+    // Find all intersections with scene objects
+    const intersects = raycasterRef.current.intersectObjects(scene.children, true);
 
-    // Find first object with nodeId in userData
+    // Find the first object with nodeId in userData (walk up parent chain)
     let hitNodeId: string | null = null;
-    for (const hit of intersects) {
-      // Check hit object and its ancestors for nodeId
-      let obj: THREE.Object3D | null = hit.object;
+    let hitPoint: THREE.Vector3 | null = null;
+
+    for (const intersect of intersects) {
+      // Skip the cursor meshes themselves
+      if (intersect.object === meshRef.current || intersect.object === glowRef.current) {
+        continue;
+      }
+
+      // Walk up parent chain looking for nodeId
+      let obj: THREE.Object3D | null = intersect.object;
       while (obj) {
         if (obj.userData?.nodeId) {
           hitNodeId = obj.userData.nodeId;
+          hitPoint = intersect.point;
           break;
         }
         obj = obj.parent;
       }
+
       if (hitNodeId) break;
     }
 
-    // Get current state
-    const handStore = useHandStore.getState();
-    const canvasStore = useCanvasStore.getState();
-    const currentGrabbedId = handStore.grabbedNodeId;
-    const currentHoveredId = handStore.hoveredNodeId;
-
-    // Update hover state
-    if (hitNodeId && hitNodeId !== currentHoveredId) {
-      canvasStore.pushFocus(hitNodeId);
+    // === UPDATE HOVER STATE ===
+    if (hitNodeId && hitNodeId !== hoveredNodeId) {
       handStore.setHoveredNode(hitNodeId);
-    } else if (!hitNodeId && currentHoveredId) {
+      canvasStore.pushFocus(hitNodeId);
+    } else if (!hitNodeId && hoveredNodeId) {
       handStore.setHoveredNode(null);
     }
 
-    // Handle PINCH gesture for grab/move
+    // === CURSOR POSITION ===
+    // Position cursor at hit point, or project along ray at default depth
+    let cursorTarget: THREE.Vector3;
+    if (hitPoint) {
+      cursorTarget = hitPoint.clone();
+    } else {
+      // No hit - place cursor along ray at INTERACTION_DEPTH from camera
+      cursorTarget = camera.position.clone().add(
+        raycasterRef.current.ray.direction.clone().multiplyScalar(INTERACTION_DEPTH)
+      );
+    }
+
+    // Smooth cursor movement
+    smoothedPos.current.lerp(cursorTarget, delta * 12);
+    meshRef.current.position.copy(smoothedPos.current);
+    glowRef.current.position.copy(smoothedPos.current);
+
+    // === GRAB LOGIC ===
     if (gesture === 'pinch') {
-      if (!currentGrabbedId && hitNodeId) {
-        // Start grabbing the hovered node
-        console.log('[HandCursor] Grabbing node:', hitNodeId);
-        handStore.setGrabbedNode(hitNodeId);
-        canvasStore.pushFocus(hitNodeId);
-      } else if (currentGrabbedId && position) {
-        // Move the grabbed node to cursor position
-        canvasStore.moveNode(currentGrabbedId, {
-          x: position.x,
-          y: Math.max(0.5, position.y), // Keep above ground
-          z: position.z,
+      // If pinching and hovering over a node, grab it
+      if (!grabbedNodeId && hoveredNodeId) {
+        handStore.setGrabbedNode(hoveredNodeId);
+        canvasStore.pushFocus(hoveredNodeId);
+        console.log('[HandCursor] GRABBED:', hoveredNodeId);
+      }
+      // If already grabbing, move the node
+      else if (grabbedNodeId) {
+        // Calculate world position at INTERACTION_DEPTH along ray
+        const worldPos = camera.position.clone().add(
+          raycasterRef.current.ray.direction.clone().multiplyScalar(INTERACTION_DEPTH)
+        );
+        canvasStore.moveNode(grabbedNodeId, {
+          x: worldPos.x,
+          y: Math.max(0.5, worldPos.y), // Keep above ground
+          z: worldPos.z,
         });
       }
     } else {
       // Not pinching - release any grabbed node
-      if (currentGrabbedId) {
-        console.log('[HandCursor] Releasing node:', currentGrabbedId);
+      if (grabbedNodeId) {
+        console.log('[HandCursor] RELEASED:', grabbedNodeId);
         handStore.setGrabbedNode(null);
       }
     }
+
+    // === CURSOR APPEARANCE ===
+    const targetColor = GESTURE_COLORS[gesture] || GESTURE_COLORS.none;
+
+    if (materialRef.current) {
+      materialRef.current.color.lerp(targetColor, delta * 10);
+      materialRef.current.emissive.lerp(targetColor, delta * 10);
+      materialRef.current.emissiveIntensity = grabbedNodeId ? 1.5 : hitNodeId ? 1.0 : 0.6;
+    }
+
+    if (glowMaterialRef.current) {
+      glowMaterialRef.current.color.lerp(targetColor, delta * 10);
+      glowMaterialRef.current.opacity = grabbedNodeId ? 0.5 : hitNodeId ? 0.35 : 0.2;
+    }
+
+    // Scale cursor based on state
+    const scale = grabbedNodeId ? 1.4 : hitNodeId ? 1.2 : 1.0;
+    meshRef.current.scale.setScalar(scale);
+    glowRef.current.scale.setScalar(scale * 2.5);
   });
 
   return (
