@@ -210,6 +210,7 @@ export default function Home() {
       const data = await response.json();
       const actions: BuilderAction[] = data.actions || [];
       console.log('[PIPELINE] 3. Received actions from Builder:', actions.length, actions.map(a => a.type));
+      console.log('[PIPELINE] ALL ACTIONS:', JSON.stringify(actions.map(a => a.type)));
       console.log('[PIPELINE] TTS ACTIONS:', actions.filter(a => a.type === 'respond_verbally'));
 
       // Execute each action
@@ -217,19 +218,13 @@ export default function Home() {
         console.log('[PIPELINE] 4. Executing action:', action.type, action);
         store.executeAction(action);
 
-        // Handle TTS for verbal responses
+        // Handle TTS for verbal responses - NUCLEAR FIX: bypass tts-player entirely
         if (action.type === 'respond_verbally' && action.message) {
-          console.log('[PIPELINE] 5. TTS speak:', action.message);
-
-          // Try Deepgram TTS first, fallback to Web Speech API
-          if (ttsPlayerRef.current) {
-            ttsPlayerRef.current.speak(action.message);
-          } else {
-            // Web Speech API fallback
-            const u = new SpeechSynthesisUtterance(action.message);
-            u.rate = 1.1;
-            window.speechSynthesis.speak(u);
-          }
+          console.log('[PIPELINE] 5. DIRECT TTS:', action.message);
+          const u = new SpeechSynthesisUtterance(action.message);
+          u.rate = 1.0;
+          u.pitch = 1.0;
+          window.speechSynthesis.speak(u);
         }
       }
 
