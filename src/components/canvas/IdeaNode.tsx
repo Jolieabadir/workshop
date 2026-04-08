@@ -7,7 +7,6 @@ import * as THREE from 'three';
 import type { CanvasNode, NodeType } from '@/types/canvas';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
-import { registerNodeMesh } from './HandRaycaster';
 
 interface IdeaNodeProps {
   node: CanvasNode;
@@ -71,14 +70,14 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   const isHandHovered = hoveredNodeId === node.id;
   const isHandGrabbed = grabbedNodeId === node.id;
 
-  // Register mesh for raycasting
+  // Set userData for raycaster detection
   useEffect(() => {
-    if (groupRef.current) {
-      registerNodeMesh(node.id, groupRef.current);
+    if (meshRef.current) {
+      meshRef.current.userData = { nodeId: node.id };
     }
-    return () => {
-      registerNodeMesh(node.id, null);
-    };
+    if (groupRef.current) {
+      groupRef.current.userData = { nodeId: node.id };
+    }
   }, [node.id]);
 
   // Get color based on node type or custom color

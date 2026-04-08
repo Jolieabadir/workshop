@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHandStore } from '@/store/hand-store';
+import { useCanvasStore } from '@/store/canvas-store';
 
 // Gesture colors for the cursor
 const GESTURE_COLORS: Record<string, THREE.Color> = {
@@ -20,12 +21,18 @@ export function HandCursor() {
   const materialRef = useRef<THREE.MeshStandardMaterial>(null);
   const glowMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
 
+  // Get camera and scene for raycasting
+  const { camera, scene } = useThree();
+  const raycaster = useRef(new THREE.Raycaster());
+  const pointer = useRef(new THREE.Vector2());
+
   // Use right hand for cursor (interaction hand)
   const rightHand = useHandStore((s) => s.rightHand);
   const grabbedNodeId = useHandStore((s) => s.grabbedNodeId);
   const isTracking = useHandStore((s) => s.isTracking);
 
   const position = rightHand.position;
+  const screenPosition = rightHand.screenPosition;
   const gesture = rightHand.gesture;
   const isDetected = rightHand.isDetected;
 
@@ -80,6 +87,43 @@ export function HandCursor() {
     const visible = isTracking && isDetected && position !== null;
     meshRef.current.visible = visible;
     glowRef.current.visible = visible;
+
+    // --- Raycasting for node interaction ---
+    if (!isDetected || !screenPosition) return;
+
+    // Convert screen position (0-1) to normalized device coordinates (-1 to 1)
+    // MediaPipe gives mirrored X, so we flip it
+    pointer.current.x = (1 - screenPosition.x) * 2 - 1;
+    pointer.current.y = -(screenPosition.y) * 2 + 1;
+
+    // Update raycaster from camera
+    raycaster.current.setFromCamera(pointer.current, camera);
+
+    // Intersect all scene objects recursively
+    const intersects = raycaster.current.intersectObjects(scene.children, true);
+
+    // Find first object with nodeId in userData
+    let hitNodeId: string | null = null;
+    for (const hit of intersects) {
+      // Check hit object and its ancestors for nodeId
+      let obj: THREE.Object3D | null = hit.object;
+      while (obj) {
+        if (obj.userData?.nodeId) {
+          hitNodeId = obj.userData.nodeId;
+          break;
+        }
+        obj = obj.parent;
+      }
+      if (hitNodeId) break;
+    }
+
+    // Update hover and focus state
+    if (hitNodeId) {
+      useCanvasStore.getState().pushFocus(hitNodeId);
+      useHandStore.getState().setHoveredNode(hitNodeId);
+    } else {
+      useHandStore.getState().setHoveredNode(null);
+    }
   });
 
   return (
