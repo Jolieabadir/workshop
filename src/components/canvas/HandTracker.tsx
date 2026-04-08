@@ -31,7 +31,11 @@ const CAMERA_DEADZONE = 0.1; // Center deadzone where no movement occurs
 // Smoothing factor for EMA (exponential moving average)
 // position = alpha * newPos + (1-alpha) * lastPos
 // Lower alpha = smoother but more latency, higher = responsive but jittery
-const SMOOTHING_ALPHA = 0.25;
+const SMOOTHING_ALPHA = 0.15;
+
+// Maximum allowed landmark jump between frames (in normalized screen space)
+// Jumps larger than this are likely detection resets, not real movement
+const MAX_LANDMARK_JUMP = 0.15;
 
 interface HandTrackerProps {
   enabled?: boolean;
@@ -53,6 +57,10 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   // Smoothed landmarks for each hand (EMA smoothing to kill jitter)
   const smoothedLeftLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
   const smoothedRightLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
+
+  // Previous raw landmarks for velocity check (detect jumps from detection resets)
+  const prevRawLeftLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
+  const prevRawRightLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +84,24 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   const nodes = useCanvasStore((s) => s.nodes);
   const moveNode = useCanvasStore((s) => s.moveNode);
   const pushFocus = useCanvasStore((s) => s.pushFocus);
+
+  // Check if landmarks jumped too much (detection reset)
+  // Returns true if any landmark moved more than MAX_LANDMARK_JUMP in x or y
+  const hasLandmarkJump = useCallback((
+    newLandmarks: { x: number; y: number; z: number }[],
+    prevLandmarks: { x: number; y: number; z: number }[] | null
+  ): boolean => {
+    if (!prevLandmarks) return false; // First frame, no jump
+
+    for (let i = 0; i < newLandmarks.length && i < prevLandmarks.length; i++) {
+      const dx = Math.abs(newLandmarks[i].x - prevLandmarks[i].x);
+      const dy = Math.abs(newLandmarks[i].y - prevLandmarks[i].y);
+      if (dx > MAX_LANDMARK_JUMP || dy > MAX_LANDMARK_JUMP) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
 
   // Apply EMA smoothing to landmarks: smoothed = alpha * new + (1-alpha) * prev
   const smoothLandmarks = useCallback((
@@ -163,12 +189,12 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     return { ...landmarks[MIDDLE_MCP] };
   }, []);
 
-  // Map screen position to 3D world position
+  // Map screen position to 3D world position (smaller ranges to reduce jumps)
   const screenTo3D = useCallback((screenX: number, screenY: number): Vec3 => {
     return {
-      x: (1 - screenX) * 10 - 5,
-      y: (1 - screenY) * 4 + 0.5,
-      z: 2,
+      x: (1 - screenX) * 8 - 4,
+      y: (1 - screenY) * 3 + 0.5,
+      z: 1.5,
     };
   }, []);
 
@@ -338,6 +364,13 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
 
         if (isLeftHand) {
           leftDetected = true;
+          // Velocity check: skip frame if landmarks jumped too much (detection reset)
+          if (hasLandmarkJump(rawLandmarks, prevRawLeftLandmarksRef.current)) {
+            // Store raw landmarks but don't update state this frame
+            prevRawLeftLandmarksRef.current = rawLandmarks.map(lm => ({ ...lm }));
+            continue;
+          }
+          prevRawLeftLandmarksRef.current = rawLandmarks.map(lm => ({ ...lm }));
           // Apply EMA smoothing to reduce jitter
           const smoothed = smoothLandmarks(rawLandmarks, smoothedLeftLandmarksRef.current);
           smoothedLeftLandmarksRef.current = smoothed;
@@ -345,6 +378,13 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
           drawHandLandmarks(ctx, smoothed, canvas.width, canvas.height, leftHandGesture, 'Left');
         } else if (isRightHand) {
           rightDetected = true;
+          // Velocity check: skip frame if landmarks jumped too much (detection reset)
+          if (hasLandmarkJump(rawLandmarks, prevRawRightLandmarksRef.current)) {
+            // Store raw landmarks but don't update state this frame
+            prevRawRightLandmarksRef.current = rawLandmarks.map(lm => ({ ...lm }));
+            continue;
+          }
+          prevRawRightLandmarksRef.current = rawLandmarks.map(lm => ({ ...lm }));
           // Apply EMA smoothing to reduce jitter
           const smoothed = smoothLandmarks(rawLandmarks, smoothedRightLandmarksRef.current);
           smoothedRightLandmarksRef.current = smoothed;
@@ -360,6 +400,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       setCameraControl({ isActive: false, azimuthDelta: 0, polarDelta: 0, zoomDelta: 0 });
       prevLeftPalmRef.current = null;
       smoothedLeftLandmarksRef.current = null; // Reset smoothing state
+      prevRawLeftLandmarksRef.current = null; // Reset velocity check state
     }
     if (!rightDetected) {
       setRightHandDetected(false);
@@ -368,8 +409,9 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       }
       setHoveredNode(null);
       smoothedRightLandmarksRef.current = null; // Reset smoothing state
+      prevRawRightLandmarksRef.current = null; // Reset velocity check state
     }
-  }, [processLeftHand, processRightHand, smoothLandmarks, leftHandGesture, rightHandGesture, setLeftHandDetected, setRightHandDetected, setCameraControl, grabbedNodeId, setGrabbedNode, setHoveredNode]);
+  }, [processLeftHand, processRightHand, smoothLandmarks, hasLandmarkJump, leftHandGesture, rightHandGesture, setLeftHandDetected, setRightHandDetected, setCameraControl, grabbedNodeId, setGrabbedNode, setHoveredNode]);
 
   // Draw hand landmarks with gesture visualization
   const drawHandLandmarks = (
