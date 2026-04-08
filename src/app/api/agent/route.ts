@@ -221,15 +221,20 @@ export async function POST(request: NextRequest) {
 
     const actions: BuilderAction[] = [];
 
+    console.log('[AGENT API] Raw response blocks:', response.content.length);
     for (const block of response.content) {
+      console.log('[AGENT API] Block type:', block.type, block.type === 'tool_use' ? (block as { name: string }).name : '');
       if (block.type === 'tool_use') {
-        const action = parseToolCallToAction(block.name, block.input as Record<string, unknown>);
+        const toolBlock = block as { name: string; input: Record<string, unknown> };
+        console.log('[AGENT API] Tool call:', toolBlock.name, JSON.stringify(toolBlock.input));
+        const action = parseToolCallToAction(toolBlock.name, toolBlock.input);
         if (action) {
           actions.push(action);
         }
       }
     }
 
+    console.log('[AGENT API] Final actions:', actions.length, JSON.stringify(actions.map(a => ({ type: a.type, message: a.type === 'respond_verbally' ? (a as { message: string }).message : undefined }))));
     return NextResponse.json({ actions });
   } catch (error) {
     console.error('Builder agent error:', error);

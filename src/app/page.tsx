@@ -213,7 +213,10 @@ export default function Home() {
       console.log('[PIPELINE] ALL ACTIONS:', JSON.stringify(actions.map(a => a.type)));
       console.log('[PIPELINE] TTS ACTIONS:', actions.filter(a => a.type === 'respond_verbally'));
 
-      // Execute each action
+      // Execute each action and track what was done
+      let hadTTS = false;
+      const canvasActions: string[] = [];
+
       for (const action of actions) {
         console.log('[PIPELINE] 4. Executing action:', action.type, action);
         store.executeAction(action);
@@ -225,7 +228,30 @@ export default function Home() {
           u.rate = 1.0;
           u.pitch = 1.0;
           window.speechSynthesis.speak(u);
+          hadTTS = true;
+        } else if (action.type === 'create_node') {
+          canvasActions.push(`created ${action.title || 'node'}`);
+        } else if (action.type === 'create_connection') {
+          canvasActions.push('connected nodes');
+        } else if (action.type === 'move_node') {
+          canvasActions.push('moved node');
+        } else if (action.type === 'delete_node') {
+          canvasActions.push('deleted node');
+        } else if (action.type === 'update_node') {
+          canvasActions.push('updated node');
+        } else if (action.type === 'group_nodes') {
+          canvasActions.push('grouped nodes');
         }
+      }
+
+      // FALLBACK: If Builder didn't call respond_verbally but did canvas actions, auto-generate TTS
+      if (!hadTTS && canvasActions.length > 0) {
+        const fallbackMessage = canvasActions.join(' and ');
+        console.log('[PIPELINE] 5. FALLBACK TTS (Builder forgot respond_verbally):', fallbackMessage);
+        const u = new SpeechSynthesisUtterance(fallbackMessage);
+        u.rate = 1.0;
+        u.pitch = 1.0;
+        window.speechSynthesis.speak(u);
       }
 
       // Log actions to Safety Supervisor
