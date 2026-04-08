@@ -1,11 +1,13 @@
 'use client';
 
 import { Html, RoundedBox } from '@react-three/drei';
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { CanvasNode, NodeType } from '@/types/canvas';
 import { useCanvasStore } from '@/store/canvas-store';
+import { useHandStore } from '@/store/hand-store';
+import { registerNodeMesh } from './HandRaycaster';
 
 interface IdeaNodeProps {
   node: CanvasNode;
@@ -53,6 +55,7 @@ function createHexagonalPrismGeometry(radius: number, height: number): THREE.Ext
 }
 
 export function IdeaNode({ node }: IdeaNodeProps) {
+  const groupRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial>(null);
   const [hovered, setHovered] = useState(false);
@@ -61,6 +64,22 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   const pushFocus = useCanvasStore((s) => s.pushFocus);
   const focusStack = useCanvasStore((s) => s.focusStack);
   const isTopFocus = focusStack[0] === node.id;
+
+  // Hand tracking hover state
+  const hoveredNodeId = useHandStore((s) => s.hoveredNodeId);
+  const grabbedNodeId = useHandStore((s) => s.grabbedNodeId);
+  const isHandHovered = hoveredNodeId === node.id;
+  const isHandGrabbed = grabbedNodeId === node.id;
+
+  // Register mesh for raycasting
+  useEffect(() => {
+    if (groupRef.current) {
+      registerNodeMesh(node.id, groupRef.current);
+    }
+    return () => {
+      registerNodeMesh(node.id, null);
+    };
+  }, [node.id]);
 
   // Get color based on node type or custom color
   const baseColor = useMemo(() => {
@@ -90,12 +109,22 @@ export function IdeaNode({ node }: IdeaNodeProps) {
     }
 
     if (materialRef.current) {
-      // Pulse emissive intensity on hover
-      const targetIntensity = hovered ? 0.8 : isTopFocus ? 0.5 : 0.3;
+      // Pulse emissive intensity based on state
+      // Hand interaction takes priority over mouse
+      const targetIntensity = isHandGrabbed ? 1.2 : isHandHovered ? 1.0 : hovered ? 0.8 : isTopFocus ? 0.5 : 0.3;
       materialRef.current.emissiveIntensity = THREE.MathUtils.lerp(
         materialRef.current.emissiveIntensity,
         targetIntensity,
         delta * 8
+      );
+    }
+
+    // Scale up slightly when grabbed by hand
+    if (meshRef.current) {
+      const targetScale = isHandGrabbed ? 1.15 : 1.0;
+      meshRef.current.scale.lerp(
+        new THREE.Vector3(targetScale, targetScale, targetScale),
+        delta * 10
       );
     }
   });
@@ -188,8 +217,12 @@ export function IdeaNode({ node }: IdeaNodeProps) {
     }
   };
 
+  // Combined hover state (mouse or hand)
+  const isAnyHover = hovered || isHandHovered;
+
   return (
     <group
+      ref={groupRef}
       position={[node.position.x, node.position.y, node.position.z]}
     >
       {/* The 3D shape */}
@@ -206,9 +239,9 @@ export function IdeaNode({ node }: IdeaNodeProps) {
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
         <ringGeometry args={[0.6, 0.8, 32]} />
         <meshBasicMaterial
-          color={baseColor}
+          color={isHandGrabbed ? '#ff6b9d' : baseColor}
           transparent
-          opacity={hovered ? 0.4 : 0.15}
+          opacity={isHandGrabbed ? 0.6 : isAnyHover ? 0.4 : 0.15}
           side={THREE.DoubleSide}
         />
       </mesh>

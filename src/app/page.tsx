@@ -9,11 +9,7 @@ import { useInputStore } from '@/store/input-store';
 import { useOwlAnalysis } from '@/hooks/useOwlAnalysis';
 import { DeepgramClient } from '@/lib/deepgram';
 import { getTTSPlayer } from '@/lib/tts-player';
-import {
-  processVoiceInput,
-  processHandInput,
-  formatIntentForBuilder,
-} from '@/lib/input-manager';
+import { processHandInput } from '@/lib/input-manager';
 import { logBuilderActions, getActionSummary, getActionIcon, formatLogTime } from '@/lib/agents/safety-log';
 import type { BuilderAction, CanvasState, UnifiedIntent } from '@/types/canvas';
 
@@ -121,23 +117,16 @@ export default function Home() {
         }
 
         // speech_final = user paused speaking (utterance complete)
-        // Only then do we process through Input Manager and send to Builder
+        // Direct pipeline: Deepgram speech_final -> POST /api/agent -> execute actions
         if (speechFinal && finalTranscriptRef.current.trim()) {
-          console.log('[Voice] Speech final, processing intent:', finalTranscriptRef.current);
+          const utterance = finalTranscriptRef.current.trim();
+          console.log('SPEECH_FINAL:', utterance);
 
-          // Process through Input Manager to create unified intent
-          const intent = processVoiceInput(finalTranscriptRef.current, true);
-
-          if (intent) {
-            // Send enriched intent to Builder
-            sendToBuilderRef.current(finalTranscriptRef.current, intent);
-          } else {
-            // Fallback: send raw transcript
-            sendToBuilderRef.current(finalTranscriptRef.current, null);
-          }
-
-          // Clear for next utterance
+          // Clear immediately to prevent double-sends
           finalTranscriptRef.current = '';
+
+          // Direct call to Builder - no middleman
+          sendToBuilderRef.current(utterance, null);
         }
       },
       onStatus: (status, error) => {
@@ -180,68 +169,79 @@ export default function Home() {
     }
   }, [isListening, setTranscript]);
 
-  const sendToBuilder = useCallback(async (text: string, intent: UnifiedIntent | null = null) => {
-    if (!text.trim() || isProcessing) return;
+  const sendToBuilder = useCallback(async (text: string, _intent: UnifiedIntent | null = null) => {
+    if (!text.trim()) return;
 
+    // Prevent concurrent requests
+    if (isProcessing) {
+      console.log('[Builder] Skipping - already processing');
+      return;
+    }
+
+    console.log('[Builder] Sending to /api/agent:', text);
     setIsProcessing(true);
     setTranscript(text);
 
-    // Capture canvas state BEFORE actions
-    const canvasBefore: CanvasState = { nodes, connections, groups, focusStack };
-
-    // Build enriched context from intent
-    let enrichedTranscript = text;
-    if (intent) {
-      const intentContext = formatIntentForBuilder(intent);
-      enrichedTranscript = `${intentContext}\n\n---\nRaw transcript: "${text}"`;
-    }
+    // Get FRESH canvas state at call time (not stale closure)
+    const store = useCanvasStore.getState();
+    const canvasBefore: CanvasState = {
+      nodes: store.nodes,
+      connections: store.connections,
+      groups: store.groups,
+      focusStack: store.focusStack,
+    };
 
     try {
       const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transcript: enrichedTranscript,
+          transcript: text,
           canvasState: canvasBefore,
-          // Include structured intent data for the API
-          intent: intent ? {
-            type: intent.type,
-            targetNodeId: intent.targetNodeId,
-            secondaryNodeId: intent.secondaryNodeId,
-            position: intent.position,
-            gesture: intent.gesture,
-            resolvedReferences: intent.resolvedReferences,
-          } : null,
         }),
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Builder] API error:', response.status, errorText);
         throw new Error(`API error: ${response.status}`);
       }
 
       const data = await response.json();
       const actions: BuilderAction[] = data.actions || [];
+      console.log('[Builder] Received actions:', actions.length, actions.map(a => a.type));
 
+      // Execute each action
       for (const action of actions) {
-        executeAction(action);
+        store.executeAction(action);
 
         // Handle TTS for verbal responses
         if (action.type === 'respond_verbally' && action.message) {
-          ttsPlayerRef.current?.speak(action.message);
+          console.log('BUILDER SPEAKING:', action.message);
+
+          // Try Deepgram TTS first, fallback to Web Speech API
+          if (ttsPlayerRef.current) {
+            ttsPlayerRef.current.speak(action.message);
+          } else {
+            // Web Speech API fallback
+            const u = new SpeechSynthesisUtterance(action.message);
+            u.rate = 1.1;
+            window.speechSynthesis.speak(u);
+          }
         }
       }
 
-      // Log actions to Safety Supervisor AFTER execution
+      // Log actions to Safety Supervisor
       if (actions.length > 0) {
-        const canvasAfter: CanvasState = useCanvasStore.getState();
+        const canvasAfter = useCanvasStore.getState();
         logBuilderActions(actions, text, canvasBefore, canvasAfter);
       }
     } catch (error) {
-      console.error('Failed to send to builder:', error);
+      console.error('[Builder] Failed:', error);
     } finally {
       setIsProcessing(false);
     }
-  }, [nodes, connections, groups, focusStack, executeAction, setTranscript, isProcessing]);
+  }, [isProcessing, setTranscript]);
 
   // Keep sendToBuilder ref up to date (avoids stale closure in Deepgram callback)
   useEffect(() => {
@@ -251,9 +251,7 @@ export default function Home() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputValue.trim()) {
-      // For typed input, create an intent manually
-      const intent = processVoiceInput(inputValue, true);
-      sendToBuilder(inputValue, intent);
+      sendToBuilder(inputValue, null);
       setInputValue('');
     }
   };

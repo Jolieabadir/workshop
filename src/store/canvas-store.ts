@@ -93,6 +93,10 @@ interface CanvasStore extends CanvasState {
   builderTarget: Vec3 | null;
   setBuilderTarget: (pos: Vec3) => void;
 
+  // Next placement position (set by right hand open palm gesture at empty space)
+  nextPlacementPosition: Vec3 | null;
+  setNextPlacementPosition: (pos: Vec3 | null) => void;
+
   // Transcript
   transcript: string;
   setTranscript: (t: string) => void;
@@ -112,6 +116,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   builderPosition: { x: 0, y: 2, z: 2 },
   builderTarget: null,
+  nextPlacementPosition: null,
   transcript: '',
   isListening: false,
   lastAnalyzedAt: 0,
@@ -119,17 +124,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setTranscript: (t) => set({ transcript: t }),
   setListening: (v) => set({ isListening: v }),
   setLastAnalyzedAt: (t) => set({ lastAnalyzedAt: t }),
+  setNextPlacementPosition: (pos) => set({ nextPlacementPosition: pos }),
 
   addNode: (type, content, title, position, shape = 'sphere') => {
     const id = uid();
     const now = Date.now();
-    const pos = position ?? findSpacedPosition(get().nodes);
+    // Priority: explicit position > nextPlacementPosition (from hand gesture) > auto-spaced
+    const state = get();
+    const pos = position ?? state.nextPlacementPosition ?? findSpacedPosition(state.nodes);
     set((s) => ({
       nodes: {
         ...s.nodes,
         [id]: { id, type, shape, content, title, position: pos, createdAt: now, updatedAt: now },
       },
       focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
+      // Clear nextPlacementPosition after using it
+      nextPlacementPosition: null,
     }));
     // Move builder avatar toward the new node
     get().setBuilderTarget(pos);

@@ -14,6 +14,7 @@ const RING_TIP = 16;
 const PINKY_TIP = 20;
 const WRIST = 0;
 const INDEX_MCP = 5;
+const MIDDLE_MCP = 9; // Palm center landmark
 const PINKY_MCP = 17;
 
 // Gesture thresholds
@@ -30,7 +31,7 @@ const CAMERA_DEADZONE = 0.1; // Center deadzone where no movement occurs
 // Smoothing factor for EMA (exponential moving average)
 // position = alpha * newPos + (1-alpha) * lastPos
 // Lower alpha = smoother but more latency, higher = responsive but jittery
-const SMOOTHING_ALPHA = 0.3;
+const SMOOTHING_ALPHA = 0.25;
 
 interface HandTrackerProps {
   enabled?: boolean;
@@ -151,18 +152,12 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     return { gesture: 'none', pinchDist };
   }, [landmarkDistance]);
 
-  // Calculate palm center from landmarks
+  // Calculate palm center from landmarks (use MIDDLE_MCP as primary reference)
   const getPalmCenter = useCallback((
     landmarks: { x: number; y: number; z: number }[]
   ): { x: number; y: number; z: number } => {
-    const wrist = landmarks[WRIST];
-    const indexMcp = landmarks[INDEX_MCP];
-    const pinkyMcp = landmarks[PINKY_MCP];
-    return {
-      x: (wrist.x + indexMcp.x + pinkyMcp.x) / 3,
-      y: (wrist.y + indexMcp.y + pinkyMcp.y) / 3,
-      z: (wrist.z + indexMcp.z + pinkyMcp.z) / 3,
-    };
+    // Landmark 9 (MIDDLE_MCP) is the center of the palm
+    return { ...landmarks[MIDDLE_MCP] };
   }, []);
 
   // Map screen position to 3D world position
@@ -194,6 +189,9 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     return nearestId;
   }, [nodes]);
 
+  // Track previous pinch distance for zoom delta calculation
+  const prevLeftPinchRef = useRef<number | null>(null);
+
   // Process LEFT HAND for camera navigation
   const processLeftHand = useCallback((
     landmarks: { x: number; y: number; z: number }[]
@@ -210,7 +208,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       pinchDistance: pinchDist,
     });
 
-    // Only control camera when palm is open (navigation gesture)
+    // OPEN PALM = Camera orbit control (azimuth + polar)
     if (gesture === 'open_palm') {
       // Calculate delta from center (0.5, 0.5)
       const centerX = 0.5;
@@ -218,16 +216,9 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       const deltaX = palmCenter.x - centerX;
       const deltaY = palmCenter.y - centerY;
 
-      // Calculate depth delta (z movement for zoom)
-      let zoomDelta = 0;
-      if (prevLeftPalmRef.current) {
-        // Z is depth - pushing hand forward (lower z) = zoom in
-        const zDelta = prevLeftPalmRef.current.z - palmCenter.z;
-        if (Math.abs(zDelta) > 0.01) {
-          zoomDelta = zDelta * CAMERA_ZOOM_SENSITIVITY;
-        }
-      }
+      // Store palm position for reference
       prevLeftPalmRef.current = { ...palmCenter };
+      prevLeftPinchRef.current = null; // Reset pinch tracking
 
       // Apply deadzone
       const azimuthDelta = Math.abs(deltaX) > CAMERA_DEADZONE
@@ -240,12 +231,37 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       setCameraControl({
         azimuthDelta,
         polarDelta,
-        zoomDelta,
+        zoomDelta: 0,
         isActive: true,
       });
-    } else {
-      // Not open palm - stop camera control
+    }
+    // PINCH = Camera zoom control
+    else if (gesture === 'pinch') {
+      let zoomDelta = 0;
+
+      if (prevLeftPinchRef.current !== null) {
+        // Calculate zoom from pinch distance change
+        // Opening fingers (increasing distance) = zoom out
+        // Closing fingers (decreasing distance) = zoom in
+        const pinchDelta = pinchDist - prevLeftPinchRef.current;
+        if (Math.abs(pinchDelta) > 0.005) {
+          zoomDelta = -pinchDelta * CAMERA_ZOOM_SENSITIVITY * 10;
+        }
+      }
+      prevLeftPinchRef.current = pinchDist;
+      prevLeftPalmRef.current = null; // Reset palm tracking
+
+      setCameraControl({
+        azimuthDelta: 0,
+        polarDelta: 0,
+        zoomDelta,
+        isActive: zoomDelta !== 0,
+      });
+    }
+    // Other gestures - stop camera control
+    else {
       prevLeftPalmRef.current = null;
+      prevLeftPinchRef.current = null;
       setCameraControl({
         azimuthDelta: 0,
         polarDelta: 0,
@@ -343,6 +359,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       setLeftHandDetected(false);
       setCameraControl({ isActive: false, azimuthDelta: 0, polarDelta: 0, zoomDelta: 0 });
       prevLeftPalmRef.current = null;
+      smoothedLeftLandmarksRef.current = null; // Reset smoothing state
     }
     if (!rightDetected) {
       setRightHandDetected(false);
@@ -350,8 +367,9 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
         setGrabbedNode(null);
       }
       setHoveredNode(null);
+      smoothedRightLandmarksRef.current = null; // Reset smoothing state
     }
-  }, [processLeftHand, processRightHand, leftHandGesture, rightHandGesture, setLeftHandDetected, setRightHandDetected, setCameraControl, grabbedNodeId, setGrabbedNode, setHoveredNode]);
+  }, [processLeftHand, processRightHand, smoothLandmarks, leftHandGesture, rightHandGesture, setLeftHandDetected, setRightHandDetected, setCameraControl, grabbedNodeId, setGrabbedNode, setHoveredNode]);
 
   // Draw hand landmarks with gesture visualization
   const drawHandLandmarks = (
@@ -405,16 +423,12 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       ctx.fill();
     }
 
-    // Draw palm center indicator for left hand
+    // Draw palm center indicator for left hand (using landmark 9 - MIDDLE_MCP)
     if (hand === 'Left') {
-      const wrist = landmarks[WRIST];
-      const indexMcp = landmarks[INDEX_MCP];
-      const pinkyMcp = landmarks[PINKY_MCP];
-      const palmX = (wrist.x + indexMcp.x + pinkyMcp.x) / 3;
-      const palmY = (wrist.y + indexMcp.y + pinkyMcp.y) / 3;
+      const palmCenter = landmarks[MIDDLE_MCP];
 
       ctx.beginPath();
-      ctx.arc(palmX * width, palmY * height, 8, 0, Math.PI * 2);
+      ctx.arc(palmCenter.x * width, palmCenter.y * height, 8, 0, Math.PI * 2);
       ctx.strokeStyle = '#4a9eff';
       ctx.lineWidth = 2;
       ctx.stroke();

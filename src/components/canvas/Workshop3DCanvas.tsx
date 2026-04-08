@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars, Grid } from '@react-three/drei';
+import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
@@ -10,9 +11,72 @@ import { IdeaNode } from './IdeaNode';
 import { ConnectionLine } from './ConnectionLine';
 import { BuilderAvatar } from './BuilderAvatar';
 import { HandCursor } from './HandCursor';
+import { HandRaycaster } from './HandRaycaster';
 
 // Smoothing factor for camera movement (lower = smoother)
 const CAMERA_SMOOTHING = 0.08;
+
+/** Visual indicator for where the next node will be placed (right hand open palm) */
+function PlacementIndicator() {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+  const nextPlacementPosition = useCanvasStore((s) => s.nextPlacementPosition);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current || !ringRef.current) return;
+
+    const visible = nextPlacementPosition !== null;
+    meshRef.current.visible = visible;
+    ringRef.current.visible = visible;
+
+    if (visible && nextPlacementPosition) {
+      // Smoothly move to target position
+      meshRef.current.position.lerp(
+        new THREE.Vector3(nextPlacementPosition.x, nextPlacementPosition.y, nextPlacementPosition.z),
+        delta * 10
+      );
+      ringRef.current.position.lerp(
+        new THREE.Vector3(nextPlacementPosition.x, nextPlacementPosition.y - 0.5, nextPlacementPosition.z),
+        delta * 10
+      );
+
+      // Rotate the ring
+      ringRef.current.rotation.z += delta * 2;
+
+      // Pulse the indicator
+      const pulse = Math.sin(Date.now() * 0.006) * 0.15 + 1;
+      meshRef.current.scale.setScalar(pulse * 0.3);
+    }
+  });
+
+  return (
+    <>
+      {/* Floating sphere indicator */}
+      <mesh ref={meshRef} visible={false}>
+        <sphereGeometry args={[1, 16, 16]} />
+        <meshStandardMaterial
+          color="#6c63ff"
+          emissive="#6c63ff"
+          emissiveIntensity={0.8}
+          transparent
+          opacity={0.6}
+          wireframe
+        />
+      </mesh>
+
+      {/* Ring on the ground */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <ringGeometry args={[0.4, 0.5, 32]} />
+        <meshBasicMaterial
+          color="#6c63ff"
+          transparent
+          opacity={0.5}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </>
+  );
+}
 
 function HandControlledOrbitControls() {
   const controlsRef = useRef<OrbitControlsType>(null);
@@ -110,6 +174,12 @@ function SceneContent() {
 
       {/* Hand cursor (follows right hand tracking) */}
       <HandCursor />
+
+      {/* Hand raycaster (handles node intersection and interaction) */}
+      <HandRaycaster />
+
+      {/* Placement indicator (shows where right hand open palm is pointing) */}
+      <PlacementIndicator />
 
       {/* Camera controls (responds to left hand) */}
       <HandControlledOrbitControls />
