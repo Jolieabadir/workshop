@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { BUILDER_SYSTEM_PROMPT, BUILDER_TOOLS } from '@/lib/builder-prompt';
-import type { BuilderAction, CanvasState, NodeType, Vec3 } from '@/types/canvas';
+import type { BuilderAction, CanvasState, NodeType, NodeShape, Vec3 } from '@/types/canvas';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -24,7 +24,7 @@ function formatCanvasStateForLLM(state: CanvasState): string {
   } else {
     output += '### Nodes:\n';
     for (const node of nodes) {
-      output += `- ID: "${node.id}" | Type: ${node.type} | Title: "${node.title || '(none)'}" | Content: "${node.content.slice(0, 100)}"\n`;
+      output += `- ID: "${node.id}" | Type: ${node.type} | Shape: ${node.shape || 'sphere'} | Title: "${node.title || '(none)'}" | Content: "${node.content.slice(0, 100)}"\n`;
       output += `  Position: (${node.position.x.toFixed(1)}, ${node.position.y.toFixed(1)}, ${node.position.z.toFixed(1)})\n`;
     }
   }
@@ -58,6 +58,7 @@ function parseToolCallToAction(toolName: string, toolInput: Record<string, unkno
       return {
         type: 'create_node',
         nodeType: (toolInput.nodeType as NodeType) || 'text_card',
+        shape: (toolInput.shape as NodeShape) || 'sphere',
         content: toolInput.content as string,
         title: toolInput.title as string | undefined,
         position: toolInput.position as Vec3 | undefined,

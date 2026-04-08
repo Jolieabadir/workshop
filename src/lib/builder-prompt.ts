@@ -19,6 +19,13 @@ Node types available:
 - image: Image placeholders
 - placeholder: Temporary placeholder nodes
 
+Node shapes — ALWAYS specify a shape based on the idea's nature:
+- cube: Components, hardware, physical things, concrete items (e.g., "MCU", "battery", "server")
+- sphere: Concepts, abstract ideas, theories, principles (e.g., "efficiency", "user experience", "scalability")
+- cylinder: Processes, flows, actions, pipelines (e.g., "data processing", "authentication flow", "deployment")
+- hexagon: Categories, groups, classifications, containers (e.g., "frontend", "phase 1", "requirements")
+- torus: Questions, unknowns, decisions to make, uncertainties (e.g., "which database?", "TBD", "needs research")
+
 Spatial conventions:
 - Positions use {x, y, z} coordinates
 - Typical range: x and z from -5 to 5, y from 0 to 4
@@ -44,6 +51,11 @@ export const BUILDER_TOOLS: Tool[] = [
           enum: ['text_card', 'diagram', 'table', 'code_block', 'image', 'placeholder'],
           description: 'The type of node to create. Default to text_card for most ideas.',
         },
+        shape: {
+          type: 'string',
+          enum: ['sphere', 'cube', 'hexagon', 'cylinder', 'torus'],
+          description: 'The 3D shape for the node. cube=components/hardware, sphere=concepts/abstract, cylinder=processes/flows, hexagon=categories/groups, torus=questions/unknowns.',
+        },
         content: {
           type: 'string',
           description: 'The main content/body of the node.',
@@ -62,7 +74,7 @@ export const BUILDER_TOOLS: Tool[] = [
           description: 'Optional 3D position. If omitted, placed near camera with random offset.',
         },
       },
-      required: ['nodeType', 'content'],
+      required: ['nodeType', 'shape', 'content'],
     },
   },
   {

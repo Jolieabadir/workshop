@@ -1,106 +1,319 @@
 'use client';
 
-import { Html } from '@react-three/drei';
-import { useRef } from 'react';
+import { Html, RoundedBox } from '@react-three/drei';
+import { useRef, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { CanvasNode } from '@/types/canvas';
+import type { CanvasNode, NodeType } from '@/types/canvas';
 import { useCanvasStore } from '@/store/canvas-store';
 
 interface IdeaNodeProps {
   node: CanvasNode;
 }
 
+// Default colors for each node type
+const TYPE_COLORS: Record<NodeType, string> = {
+  text_card: '#6C63FF',    // Purple-blue
+  diagram: '#FF6B9D',      // Pink
+  table: '#4ECDC4',        // Teal
+  code_block: '#FFE66D',   // Yellow
+  image: '#95E1D3',        // Mint
+  placeholder: '#A8A8A8',  // Gray
+};
+
+// Parse color string to THREE.Color
+function parseColor(color: string | undefined, fallback: string): THREE.Color {
+  try {
+    return new THREE.Color(color || fallback);
+  } catch {
+    return new THREE.Color(fallback);
+  }
+}
+
+// Hexagonal prism geometry for diagram nodes
+function createHexagonalPrismGeometry(radius: number, height: number): THREE.ExtrudeGeometry {
+  const shape = new THREE.Shape();
+  const sides = 6;
+  for (let i = 0; i < sides; i++) {
+    const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  shape.closePath();
+
+  return new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: true,
+    bevelThickness: 0.05,
+    bevelSize: 0.05,
+    bevelSegments: 2,
+  });
+}
+
 export function IdeaNode({ node }: IdeaNodeProps) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const pushFocus = useCanvasStore((s) => s.pushFocus);
+  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+  const [hovered, setHovered] = useState(false);
+  const [selected, setSelected] = useState(false);
 
-  // Gentle floating animation
+  const pushFocus = useCanvasStore((s) => s.pushFocus);
+  const focusStack = useCanvasStore((s) => s.focusStack);
+  const isTopFocus = focusStack[0] === node.id;
+
+  // Get color based on node type or custom color
+  const baseColor = useMemo(() => {
+    return parseColor(node.color, TYPE_COLORS[node.type] || TYPE_COLORS.placeholder);
+  }, [node.color, node.type]);
+
+  // Create hexagonal geometry for diagram type
+  const hexGeometry = useMemo(() => {
+    if (node.type === 'diagram') {
+      const geo = createHexagonalPrismGeometry(0.5, 0.3);
+      geo.center();
+      geo.rotateX(Math.PI / 2);
+      return geo;
+    }
+    return null;
+  }, [node.type]);
+
+  // Animation: gentle float + hover pulse
   useFrame((_, delta) => {
     if (meshRef.current) {
-      meshRef.current.position.y += Math.sin(Date.now() * 0.001 + node.position.x) * delta * 0.05;
+      // Gentle floating animation
+      const floatOffset = Math.sin(Date.now() * 0.001 + node.position.x * 2) * 0.02;
+      meshRef.current.position.y = node.position.y + floatOffset;
+
+      // Slow rotation
+      meshRef.current.rotation.y += delta * 0.1;
+    }
+
+    if (materialRef.current) {
+      // Pulse emissive intensity on hover
+      const targetIntensity = hovered ? 0.8 : isTopFocus ? 0.5 : 0.3;
+      materialRef.current.emissiveIntensity = THREE.MathUtils.lerp(
+        materialRef.current.emissiveIntensity,
+        targetIntensity,
+        delta * 8
+      );
     }
   });
 
-  const bgColor = node.color ?? 'rgba(255,255,255,0.95)';
+  const handleClick = (e: THREE.Event) => {
+    e.stopPropagation();
+    pushFocus(node.id);
+    setSelected(!selected);
+  };
+
+  const handlePointerOver = (e: THREE.Event) => {
+    e.stopPropagation();
+    setHovered(true);
+    document.body.style.cursor = 'pointer';
+  };
+
+  const handlePointerOut = () => {
+    setHovered(false);
+    document.body.style.cursor = 'auto';
+  };
+
+  // Render the appropriate 3D shape based on node type
+  const renderShape = () => {
+    const material = (
+      <meshStandardMaterial
+        ref={materialRef}
+        color={baseColor}
+        emissive={baseColor}
+        emissiveIntensity={0.3}
+        transparent
+        opacity={0.85}
+        roughness={0.2}
+        metalness={0.1}
+      />
+    );
+
+    switch (node.type) {
+      case 'text_card':
+        // Rounded box
+        return (
+          <RoundedBox args={[1.2, 0.8, 0.3]} radius={0.08} smoothness={4}>
+            {material}
+          </RoundedBox>
+        );
+
+      case 'diagram':
+        // Hexagonal prism
+        return hexGeometry ? (
+          <mesh geometry={hexGeometry}>
+            {material}
+          </mesh>
+        ) : null;
+
+      case 'table':
+        // Flat wide box
+        return (
+          <mesh>
+            <boxGeometry args={[1.5, 0.15, 1]} />
+            {material}
+          </mesh>
+        );
+
+      case 'code_block':
+        // Cube
+        return (
+          <mesh>
+            <boxGeometry args={[0.8, 0.8, 0.8]} />
+            {material}
+          </mesh>
+        );
+
+      case 'image':
+        // Sphere
+        return (
+          <mesh>
+            <sphereGeometry args={[0.5, 32, 32]} />
+            {material}
+          </mesh>
+        );
+
+      case 'placeholder':
+      default:
+        // Small sphere
+        return (
+          <mesh>
+            <sphereGeometry args={[0.4, 24, 24]} />
+            {material}
+          </mesh>
+        );
+    }
+  };
 
   return (
-    <mesh
-      ref={meshRef}
+    <group
       position={[node.position.x, node.position.y, node.position.z]}
-      onClick={(e) => {
-        e.stopPropagation();
-        pushFocus(node.id);
-      }}
     >
-      <Html
-        transform
-        distanceFactor={6}
-        style={{
-          pointerEvents: 'auto',
-          userSelect: 'none',
-        }}
+      {/* The 3D shape */}
+      <mesh
+        ref={meshRef}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
       >
-        <div
-          style={{
-            background: bgColor,
-            backdropFilter: 'blur(12px)',
-            borderRadius: '12px',
-            border: '1px solid rgba(255,255,255,0.2)',
-            padding: '16px 20px',
-            minWidth: '180px',
-            maxWidth: '280px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
-            cursor: 'pointer',
-            transition: 'transform 0.2s',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.03)')}
-          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+        {renderShape()}
+      </mesh>
+
+      {/* Glow effect ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
+        <ringGeometry args={[0.6, 0.8, 32]} />
+        <meshBasicMaterial
+          color={baseColor}
+          transparent
+          opacity={hovered ? 0.4 : 0.15}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Title label floating above */}
+      {node.title && (
+        <Html
+          position={[0, 1, 0]}
+          center
+          distanceFactor={8}
+          style={{ pointerEvents: 'none' }}
         >
-          {node.title && (
-            <div
-              style={{
-                fontSize: '13px',
-                fontWeight: 600,
-                color: '#1a1a2e',
-                marginBottom: '6px',
-                letterSpacing: '-0.01em',
-              }}
-            >
-              {node.title}
-            </div>
-          )}
           <div
             style={{
-              fontSize: '12px',
-              color: '#4a4a6a',
-              lineHeight: 1.5,
+              background: 'rgba(0, 0, 0, 0.7)',
+              backdropFilter: 'blur(8px)',
+              color: '#fff',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              letterSpacing: '0.02em',
+              border: `1px solid ${node.color || TYPE_COLORS[node.type]}`,
+              boxShadow: `0 0 12px ${node.color || TYPE_COLORS[node.type]}40`,
             }}
           >
-            {node.content}
+            {node.title}
           </div>
-          {node.badges && node.badges.length > 0 && (
-            <div style={{ marginTop: '8px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-              {node.badges.map((b) => (
-                <span
-                  key={b.id}
-                  style={{
-                    fontSize: '10px',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    background:
-                      b.type === 'warning' ? '#fff3cd' : b.type === 'error' ? '#f8d7da' : b.type === 'success' ? '#d4edda' : '#d1ecf1',
-                    color:
-                      b.type === 'warning' ? '#856404' : b.type === 'error' ? '#721c24' : b.type === 'success' ? '#155724' : '#0c5460',
-                  }}
-                >
-                  {b.message}
-                </span>
-              ))}
+        </Html>
+      )}
+
+      {/* Content popup on select */}
+      {(selected || isTopFocus) && node.content && (
+        <Html
+          position={[0, -1.2, 0]}
+          center
+          distanceFactor={8}
+          style={{ pointerEvents: 'auto' }}
+        >
+          <div
+            style={{
+              background: 'rgba(20, 20, 30, 0.95)',
+              backdropFilter: 'blur(12px)',
+              color: '#e0e0e0',
+              padding: '12px 16px',
+              borderRadius: '10px',
+              fontSize: '11px',
+              lineHeight: 1.6,
+              maxWidth: '240px',
+              minWidth: '140px',
+              border: `1px solid ${node.color || TYPE_COLORS[node.type]}50`,
+              boxShadow: `0 4px 20px rgba(0,0,0,0.4), 0 0 15px ${node.color || TYPE_COLORS[node.type]}30`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ marginBottom: '8px', color: '#fff', fontWeight: 500 }}>
+              {node.content}
             </div>
-          )}
-        </div>
-      </Html>
-    </mesh>
+            {node.badges && node.badges.length > 0 && (
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '8px' }}>
+                {node.badges.map((b) => (
+                  <span
+                    key={b.id}
+                    style={{
+                      fontSize: '9px',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background:
+                        b.type === 'warning' ? '#fff3cd' :
+                        b.type === 'error' ? '#f8d7da' :
+                        b.type === 'success' ? '#d4edda' : '#d1ecf1',
+                      color:
+                        b.type === 'warning' ? '#856404' :
+                        b.type === 'error' ? '#721c24' :
+                        b.type === 'success' ? '#155724' : '#0c5460',
+                    }}
+                  >
+                    {b.message}
+                  </span>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelected(false);
+              }}
+              style={{
+                position: 'absolute',
+                top: '4px',
+                right: '6px',
+                background: 'none',
+                border: 'none',
+                color: '#888',
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: '2px',
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </Html>
+      )}
+    </group>
   );
 }

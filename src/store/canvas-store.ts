@@ -1,22 +1,74 @@
 import { create } from 'zustand';
-import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType } from '@/types/canvas';
+import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape } from '@/types/canvas';
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-/** Place new nodes near the camera with a random offset */
-function defaultPosition(): Vec3 {
+const MIN_NODE_SPACING = 2.5;
+
+/** Calculate distance between two 3D points */
+function distance(a: Vec3, b: Vec3): number {
+  return Math.sqrt(
+    Math.pow(a.x - b.x, 2) +
+    Math.pow(a.y - b.y, 2) +
+    Math.pow(a.z - b.z, 2)
+  );
+}
+
+/** Generate a random position in 3D space */
+function randomPosition(spread: number, yOffset: number): Vec3 {
   return {
-    x: (Math.random() - 0.5) * 4,
-    y: (Math.random() - 0.5) * 2 + 1,
-    z: (Math.random() - 0.5) * 4,
+    x: (Math.random() - 0.5) * spread,
+    y: (Math.random() - 0.5) * 3 + yOffset,
+    z: (Math.random() - 0.5) * spread,
+  };
+}
+
+/** Find a position that maintains minimum spacing from existing nodes */
+function findSpacedPosition(existingNodes: Record<string, CanvasNode>): Vec3 {
+  const nodeList = Object.values(existingNodes);
+
+  // If no existing nodes, place near center
+  if (nodeList.length === 0) {
+    return randomPosition(4, 1.5);
+  }
+
+  // Try to find a valid position with minimum spacing
+  const maxAttempts = 50;
+  let spread = 6; // Start with a reasonable spread
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const candidate = randomPosition(spread, 1.5);
+
+    // Check distance from all existing nodes
+    const isFarEnough = nodeList.every(
+      (node) => distance(candidate, node.position) >= MIN_NODE_SPACING
+    );
+
+    if (isFarEnough) {
+      return candidate;
+    }
+
+    // Gradually increase spread if we can't find space
+    if (attempt % 10 === 9) {
+      spread += 2;
+    }
+  }
+
+  // Fallback: place in a spiral pattern outward from center
+  const angle = nodeList.length * 0.8; // Golden angle approximation
+  const radius = MIN_NODE_SPACING * (1 + nodeList.length * 0.3);
+  return {
+    x: Math.cos(angle) * radius,
+    y: 1.5 + (Math.random() - 0.5) * 2,
+    z: Math.sin(angle) * radius,
   };
 }
 
 interface CanvasStore extends CanvasState {
   // Direct mutations
-  addNode: (type: NodeType, content: string, title?: string, position?: Vec3) => string;
+  addNode: (type: NodeType, content: string, title?: string, position?: Vec3, shape?: NodeShape) => string;
   removeNode: (id: string) => void;
   updateNode: (id: string, changes: Partial<CanvasNode>) => void;
   moveNode: (id: string, position: Vec3) => void;
@@ -57,14 +109,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setTranscript: (t) => set({ transcript: t }),
   setListening: (v) => set({ isListening: v }),
 
-  addNode: (type, content, title, position) => {
+  addNode: (type, content, title, position, shape = 'sphere') => {
     const id = uid();
     const now = Date.now();
-    const pos = position ?? defaultPosition();
+    const pos = position ?? findSpacedPosition(get().nodes);
     set((s) => ({
       nodes: {
         ...s.nodes,
-        [id]: { id, type, content, title, position: pos, createdAt: now, updatedAt: now },
+        [id]: { id, type, shape, content, title, position: pos, createdAt: now, updatedAt: now },
       },
       focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
     }));
@@ -151,7 +203,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const store = get();
     switch (action.type) {
       case 'create_node':
-        store.addNode(action.nodeType, action.content, action.title, action.position);
+        store.addNode(action.nodeType, action.content, action.title, action.position, action.shape);
         break;
       case 'create_connection':
         store.addConnection(action.fromId, action.toId, action.label);
