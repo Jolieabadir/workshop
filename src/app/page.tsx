@@ -4,8 +4,12 @@ import dynamic from 'next/dynamic';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
+import { useSafetyStore } from '@/store/safety-store';
+import { useOwlAnalysis } from '@/hooks/useOwlAnalysis';
 import { DeepgramClient } from '@/lib/deepgram';
-import type { BuilderAction } from '@/types/canvas';
+import { getTTSPlayer } from '@/lib/tts-player';
+import { logBuilderActions, getActionSummary, getActionIcon, formatLogTime } from '@/lib/agents/safety-log';
+import type { BuilderAction, CanvasState } from '@/types/canvas';
 
 const Workshop3DCanvas = dynamic(
   () => import('@/components/canvas/Workshop3DCanvas').then((m) => m.Workshop3DCanvas),
@@ -34,6 +38,30 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [logPanelOpen, setLogPanelOpen] = useState(false);
+
+  // Safety log
+  const safetyLog = useSafetyStore((s) => s.log);
+
+  // Owl background analysis - fires automatically after canvas changes
+  useOwlAnalysis();
+
+  // TTS player ref
+  const ttsPlayerRef = useRef<ReturnType<typeof getTTSPlayer> | null>(null);
+
+  // Initialize TTS player
+  useEffect(() => {
+    ttsPlayerRef.current = getTTSPlayer({
+      voice: 'aura-asteria-en',
+      onStart: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+      onError: (err) => {
+        console.error('TTS error:', err);
+        setIsSpeaking(false);
+      },
+    });
+  }, []);
 
   // Hand tracking state
   const handGesture = useHandStore((s) => s.gesture);
@@ -112,13 +140,16 @@ export default function Home() {
     setIsProcessing(true);
     setTranscript(text);
 
+    // Capture canvas state BEFORE actions
+    const canvasBefore: CanvasState = { nodes, connections, groups, focusStack };
+
     try {
       const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcript: text,
-          canvasState: { nodes, connections, groups, focusStack },
+          canvasState: canvasBefore,
         }),
       });
 
@@ -131,6 +162,17 @@ export default function Home() {
 
       for (const action of actions) {
         executeAction(action);
+
+        // Handle TTS for verbal responses
+        if (action.type === 'respond_verbally' && action.message) {
+          ttsPlayerRef.current?.speak(action.message);
+        }
+      }
+
+      // Log actions to Safety Supervisor AFTER execution
+      if (actions.length > 0) {
+        const canvasAfter: CanvasState = useCanvasStore.getState();
+        logBuilderActions(actions, text, canvasBefore, canvasAfter);
       }
     } catch (error) {
       console.error('Failed to send to builder:', error);
@@ -241,13 +283,16 @@ export default function Home() {
                 width: '10px',
                 height: '10px',
                 borderRadius: '50%',
-                background: isListening ? '#22c55e' : '#6b7280',
-                boxShadow: isListening ? '0 0 8px #22c55e' : 'none',
+                background: isSpeaking ? '#ff6b9d' : isListening ? '#22c55e' : '#6b7280',
+                boxShadow: isSpeaking ? '0 0 8px #ff6b9d' : isListening ? '0 0 8px #22c55e' : 'none',
+                animation: isSpeaking ? 'pulse 0.5s ease-in-out infinite' : 'none',
               }}
             />
             <span style={{ fontSize: '12px', color: '#9ca3af' }}>
               {micError ? (
                 <span style={{ color: '#ef4444' }}>{micError}</span>
+              ) : isSpeaking ? (
+                <span style={{ color: '#ff6b9d' }}>Builder speaking...</span>
               ) : isListening ? (
                 'Listening...'
               ) : handTrackingEnabled && handIsTracking ? (

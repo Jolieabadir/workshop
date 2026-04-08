@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape } from '@/types/canvas';
+import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape, Badge } from '@/types/canvas';
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -76,6 +76,11 @@ interface CanvasStore extends CanvasState {
   removeConnection: (id: string) => void;
   addGroup: (nodeIds: string[], label: string) => string;
 
+  // Badge management (for Owl and other background agents)
+  addBadge: (nodeId: string, badge: Omit<Badge, 'id'>) => void;
+  removeBadge: (nodeId: string, badgeId: string) => void;
+  clearBadgesBySource: (source: Badge['source']) => void;
+
   // Focus stack
   pushFocus: (nodeId: string) => void;
   getFocusedNode: () => CanvasNode | null;
@@ -93,6 +98,10 @@ interface CanvasStore extends CanvasState {
   setTranscript: (t: string) => void;
   isListening: boolean;
   setListening: (v: boolean) => void;
+
+  // Owl analysis tracking
+  lastAnalyzedAt: number;
+  setLastAnalyzedAt: (t: number) => void;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -105,9 +114,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   builderTarget: null,
   transcript: '',
   isListening: false,
+  lastAnalyzedAt: 0,
 
   setTranscript: (t) => set({ transcript: t }),
   setListening: (v) => set({ isListening: v }),
+  setLastAnalyzedAt: (t) => set({ lastAnalyzedAt: t }),
 
   addNode: (type, content, title, position, shape = 'sphere') => {
     const id = uid();
@@ -184,6 +195,57 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       groups: { ...s.groups, [id]: { id, label, nodeIds, position: center } },
     }));
     return id;
+  },
+
+  addBadge: (nodeId, badge) => {
+    const badgeId = uid();
+    set((s) => {
+      const node = s.nodes[nodeId];
+      if (!node) return s;
+      const existingBadges = node.badges || [];
+      return {
+        nodes: {
+          ...s.nodes,
+          [nodeId]: {
+            ...node,
+            badges: [...existingBadges, { ...badge, id: badgeId }],
+          },
+        },
+      };
+    });
+  },
+
+  removeBadge: (nodeId, badgeId) => {
+    set((s) => {
+      const node = s.nodes[nodeId];
+      if (!node || !node.badges) return s;
+      return {
+        nodes: {
+          ...s.nodes,
+          [nodeId]: {
+            ...node,
+            badges: node.badges.filter((b) => b.id !== badgeId),
+          },
+        },
+      };
+    });
+  },
+
+  clearBadgesBySource: (source) => {
+    set((s) => {
+      const updatedNodes: Record<string, CanvasNode> = {};
+      for (const [id, node] of Object.entries(s.nodes)) {
+        if (node.badges && node.badges.some((b) => b.source === source)) {
+          updatedNodes[id] = {
+            ...node,
+            badges: node.badges.filter((b) => b.source !== source),
+          };
+        } else {
+          updatedNodes[id] = node;
+        }
+      }
+      return { nodes: updatedNodes };
+    });
   },
 
   pushFocus: (nodeId) =>

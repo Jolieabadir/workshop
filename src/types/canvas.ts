@@ -95,3 +95,18 @@ export type BuilderAction =
   | { type: 'update_node'; nodeId: string; changes: Partial<CanvasNode> }
   | { type: 'delete_node'; nodeId: string }
   | { type: 'respond_verbally'; message: string };
+
+/** Safety Supervisor audit log entry */
+export interface SafetyLogEntry {
+  id: string;
+  timestamp: number;
+  action: BuilderAction;
+  utterance: string;
+  canvasDiff: {
+    nodesAdded: string[];
+    nodesRemoved: string[];
+    nodesModified: string[];
+    connectionsAdded: string[];
+    connectionsRemoved: string[];
+  };
+}
