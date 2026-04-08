@@ -149,8 +149,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ actions });
   } catch (error) {
     console.error('Builder agent error:', error);
+
+    // Extract useful error info for client
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isBillingError = errorMessage.includes('credit balance') || errorMessage.includes('billing');
+    const isAuthError = errorMessage.includes('401') || errorMessage.includes('authentication');
+
+    if (isBillingError) {
+      return NextResponse.json(
+        { error: 'API billing issue', details: 'Anthropic API credits exhausted. Please add credits.' },
+        { status: 402 }
+      );
+    }
+
+    if (isAuthError) {
+      return NextResponse.json(
+        { error: 'API authentication failed', details: 'Check ANTHROPIC_API_KEY in .env.local' },
+        { status: 401 }
+      );
+    }
+
     return NextResponse.json(
-      { error: 'Failed to process request', details: String(error) },
+      { error: 'Failed to process request', details: errorMessage },
       { status: 500 }
     );
   }
