@@ -2,7 +2,7 @@
 
 import { Html, RoundedBox } from '@react-three/drei';
 import { useRef, useState, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { CanvasNode, NodeType } from '@/types/canvas';
 import { useCanvasStore } from '@/store/canvas-store';
@@ -100,13 +100,13 @@ export function IdeaNode({ node }: IdeaNodeProps) {
     }
   });
 
-  const handleClick = (e: THREE.Event) => {
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     pushFocus(node.id);
     setSelected(!selected);
   };
 
-  const handlePointerOver = (e: THREE.Event) => {
+  const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     setHovered(true);
     document.body.style.cursor = 'pointer';
