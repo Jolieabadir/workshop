@@ -35,6 +35,7 @@ class TTSPlayer {
   async speak(text: string): Promise<void> {
     if (!text || text.trim() === '') return;
 
+    console.log('[TTS] Queueing speech:', text);
     this.queue.push(text);
 
     if (!this.isPlaying) {
@@ -81,7 +82,10 @@ class TTSPlayer {
 
       // Fallback to Web Speech API if Deepgram failed
       if (!played) {
+        console.log('[TTS] Using Web Speech API fallback');
         await this.speakWithWebSpeech(text);
+      } else {
+        console.log('[TTS] Played via Deepgram Aura');
       }
 
       this.options.onEnd?.();

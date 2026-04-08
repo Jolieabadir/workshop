@@ -272,6 +272,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setBuilderTarget: (pos) => set({ builderTarget: pos }),
 
   executeAction: (action) => {
+    console.log('[CANVAS] executeAction:', action.type, action);
     const store = get();
     switch (action.type) {
       case 'create_node':

@@ -96,6 +96,7 @@ export function HandRaycaster() {
     if (gesture === 'pinch') {
       if (!grabbedNodeId && hitNodeId) {
         // Start grabbing
+        console.log('[HAND] Grabbing node:', hitNodeId);
         setGrabbedNode(hitNodeId);
         pushFocus(hitNodeId);
         prevDragPosRef.current = hitPoint;

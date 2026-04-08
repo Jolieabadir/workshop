@@ -120,7 +120,7 @@ export default function Home() {
         // Direct pipeline: Deepgram speech_final -> POST /api/agent -> execute actions
         if (speechFinal && finalTranscriptRef.current.trim()) {
           const utterance = finalTranscriptRef.current.trim();
-          console.log('SPEECH_FINAL:', utterance);
+          console.log('[PIPELINE] 1. SPEECH_FINAL received:', utterance);
 
           // Clear immediately to prevent double-sends
           finalTranscriptRef.current = '';
@@ -178,7 +178,7 @@ export default function Home() {
       return;
     }
 
-    console.log('[Builder] Sending to /api/agent:', text);
+    console.log('[PIPELINE] 2. Sending to /api/agent:', text);
     setIsProcessing(true);
     setTranscript(text);
 
@@ -209,15 +209,16 @@ export default function Home() {
 
       const data = await response.json();
       const actions: BuilderAction[] = data.actions || [];
-      console.log('[Builder] Received actions:', actions.length, actions.map(a => a.type));
+      console.log('[PIPELINE] 3. Received actions from Builder:', actions.length, actions.map(a => a.type));
 
       // Execute each action
       for (const action of actions) {
+        console.log('[PIPELINE] 4. Executing action:', action.type, action);
         store.executeAction(action);
 
         // Handle TTS for verbal responses
         if (action.type === 'respond_verbally' && action.message) {
-          console.log('BUILDER SPEAKING:', action.message);
+          console.log('[PIPELINE] 5. TTS speak:', action.message);
 
           // Try Deepgram TTS first, fallback to Web Speech API
           if (ttsPlayerRef.current) {
