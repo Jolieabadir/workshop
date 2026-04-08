@@ -6,7 +6,7 @@
  * Transcripts are received back via Server-Sent Events.
  */
 
-export type TranscriptCallback = (transcript: string, isFinal: boolean) => void;
+export type TranscriptCallback = (transcript: string, isFinal: boolean, speechFinal?: boolean) => void;
 export type StatusCallback = (status: 'connecting' | 'connected' | 'disconnected' | 'error', error?: string) => void;
 
 interface DeepgramClientOptions {
@@ -127,7 +127,7 @@ export class DeepgramClient {
       try {
         const data = JSON.parse(event.data);
         if (data.transcript !== undefined) {
-          this.onTranscript(data.transcript, data.is_final ?? false);
+          this.onTranscript(data.transcript, data.is_final ?? false, data.speech_final ?? false);
         }
       } catch (e) {
         console.error('[Deepgram] Failed to parse SSE message:', e);

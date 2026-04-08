@@ -11,6 +11,7 @@ import WebSocket from 'ws';
 interface TranscriptData {
   transcript: string;
   is_final: boolean;
+  speech_final?: boolean;
   confidence?: number;
   words?: Array<{ word: string; start: number; end: number }>;
 }
@@ -164,11 +165,13 @@ class DeepgramSessionManager {
             const best = alternatives[0];
             const transcript = best.transcript || '';
             const isFinal = response.is_final || false;
+            const speechFinal = response.speech_final || false;
 
             if (transcript || isFinal) {
               this.notifyCallbacks(session, {
                 transcript,
                 is_final: isFinal,
+                speech_final: speechFinal,
                 confidence: best.confidence,
                 words: best.words,
               });

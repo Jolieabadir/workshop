@@ -5,11 +5,17 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
 import { useSafetyStore } from '@/store/safety-store';
+import { useInputStore } from '@/store/input-store';
 import { useOwlAnalysis } from '@/hooks/useOwlAnalysis';
 import { DeepgramClient } from '@/lib/deepgram';
 import { getTTSPlayer } from '@/lib/tts-player';
+import {
+  processVoiceInput,
+  processHandInput,
+  formatIntentForBuilder,
+} from '@/lib/input-manager';
 import { logBuilderActions, getActionSummary, getActionIcon, formatLogTime } from '@/lib/agents/safety-log';
-import type { BuilderAction, CanvasState } from '@/types/canvas';
+import type { BuilderAction, CanvasState, UnifiedIntent } from '@/types/canvas';
 
 const Workshop3DCanvas = dynamic(
   () => import('@/components/canvas/Workshop3DCanvas').then((m) => m.Workshop3DCanvas),
@@ -44,6 +50,11 @@ export default function Home() {
   // Safety log
   const safetyLog = useSafetyStore((s) => s.log);
 
+  // Input Manager state
+  const pointedNodeId = useInputStore((s) => s.pointedNodeId);
+  const activeGesture = useInputStore((s) => s.activeGesture);
+  const pendingIntents = useInputStore((s) => s.pendingIntents);
+
   // Owl background analysis - fires automatically after canvas changes
   useOwlAnalysis();
 
@@ -72,26 +83,47 @@ export default function Home() {
   const deepgramRef = useRef<DeepgramClient | null>(null);
   const interimTranscriptRef = useRef<string>('');
   const finalTranscriptRef = useRef<string>('');
+  const sendToBuilderRef = useRef<(text: string, intent: UnifiedIntent | null) => void>(() => {});
 
   // Initialize Deepgram client
   useEffect(() => {
     deepgramRef.current = new DeepgramClient({
-      onTranscript: (text, isFinal) => {
+      onTranscript: (text, isFinal, speechFinal) => {
         if (isFinal) {
-          // Append final transcript
+          // Append finalized segment to accumulated transcript
           finalTranscriptRef.current = finalTranscriptRef.current
             ? `${finalTranscriptRef.current} ${text}`
             : text;
           interimTranscriptRef.current = '';
           setTranscript(finalTranscriptRef.current);
         } else {
-          // Show interim transcript
+          // Show interim transcript (real-time feedback)
           interimTranscriptRef.current = text;
           setTranscript(
             finalTranscriptRef.current
               ? `${finalTranscriptRef.current} ${text}`
               : text
           );
+        }
+
+        // speech_final = user paused speaking (utterance complete)
+        // Only then do we process through Input Manager and send to Builder
+        if (speechFinal && finalTranscriptRef.current.trim()) {
+          console.log('[Voice] Speech final, processing intent:', finalTranscriptRef.current);
+
+          // Process through Input Manager to create unified intent
+          const intent = processVoiceInput(finalTranscriptRef.current, true);
+
+          if (intent) {
+            // Send enriched intent to Builder
+            sendToBuilderRef.current(finalTranscriptRef.current, intent);
+          } else {
+            // Fallback: send raw transcript
+            sendToBuilderRef.current(finalTranscriptRef.current, null);
+          }
+
+          // Clear for next utterance
+          finalTranscriptRef.current = '';
         }
       },
       onStatus: (status, error) => {
@@ -180,6 +212,11 @@ export default function Home() {
       setIsProcessing(false);
     }
   }, [nodes, connections, groups, focusStack, executeAction, setTranscript, isProcessing]);
+
+  // Keep sendToBuilder ref up to date (avoids stale closure in Deepgram callback)
+  useEffect(() => {
+    sendToBuilderRef.current = sendToBuilder;
+  }, [sendToBuilder]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
