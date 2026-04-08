@@ -74,10 +74,24 @@ export default function Home() {
     });
   }, []);
 
-  // Hand tracking state
-  const handGesture = useHandStore((s) => s.gesture);
+  // Hand tracking state (two-hand)
   const handIsTracking = useHandStore((s) => s.isTracking);
+  const leftHand = useHandStore((s) => s.leftHand);
+  const rightHand = useHandStore((s) => s.rightHand);
   const grabbedNodeId = useHandStore((s) => s.grabbedNodeId);
+  const hoveredNodeId = useHandStore((s) => s.hoveredNodeId);
+  const cameraControl = useHandStore((s) => s.cameraControl);
+
+  // Legacy aliases for compatibility
+  const handGesture = rightHand.gesture;
+  const handPosition = rightHand.position;
+
+  // Feed hand tracking into Input Manager
+  useEffect(() => {
+    if (handIsTracking) {
+      processHandInput(handGesture, handPosition, hoveredNodeId);
+    }
+  }, [handIsTracking, handGesture, handPosition, hoveredNodeId]);
 
   // Deepgram client and transcript state
   const deepgramRef = useRef<DeepgramClient | null>(null);
@@ -166,7 +180,7 @@ export default function Home() {
     }
   }, [isListening, setTranscript]);
 
-  const sendToBuilder = useCallback(async (text: string) => {
+  const sendToBuilder = useCallback(async (text: string, intent: UnifiedIntent | null = null) => {
     if (!text.trim() || isProcessing) return;
 
     setIsProcessing(true);
@@ -175,13 +189,29 @@ export default function Home() {
     // Capture canvas state BEFORE actions
     const canvasBefore: CanvasState = { nodes, connections, groups, focusStack };
 
+    // Build enriched context from intent
+    let enrichedTranscript = text;
+    if (intent) {
+      const intentContext = formatIntentForBuilder(intent);
+      enrichedTranscript = `${intentContext}\n\n---\nRaw transcript: "${text}"`;
+    }
+
     try {
       const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transcript: text,
+          transcript: enrichedTranscript,
           canvasState: canvasBefore,
+          // Include structured intent data for the API
+          intent: intent ? {
+            type: intent.type,
+            targetNodeId: intent.targetNodeId,
+            secondaryNodeId: intent.secondaryNodeId,
+            position: intent.position,
+            gesture: intent.gesture,
+            resolvedReferences: intent.resolvedReferences,
+          } : null,
         }),
       });
 
@@ -221,7 +251,9 @@ export default function Home() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputValue.trim()) {
-      sendToBuilder(inputValue);
+      // For typed input, create an intent manually
+      const intent = processVoiceInput(inputValue, true);
+      sendToBuilder(inputValue, intent);
       setInputValue('');
     }
   };
@@ -453,8 +485,21 @@ export default function Home() {
                 'Listening...'
               ) : handTrackingEnabled && handIsTracking ? (
                 <span>
-                  Hand: <span style={{ color: '#22c55e', fontWeight: 600 }}>{handGesture}</span>
-                  {grabbedNodeId && <span style={{ color: '#ff6b9d' }}> (grabbing)</span>}
+                  {leftHand.isDetected && (
+                    <span style={{ color: '#4a9eff' }}>
+                      L:{leftHand.gesture === 'open_palm' ? 'nav' : leftHand.gesture}
+                    </span>
+                  )}
+                  {leftHand.isDetected && rightHand.isDetected && ' | '}
+                  {rightHand.isDetected && (
+                    <span style={{ color: '#ff6b9d' }}>
+                      R:{rightHand.gesture}
+                      {grabbedNodeId && ' (grab)'}
+                    </span>
+                  )}
+                  {!leftHand.isDetected && !rightHand.isDetected && (
+                    <span style={{ color: '#6b7280' }}>Searching for hands...</span>
+                  )}
                 </span>
               ) : (
                 'Press mic or enable hand tracking'

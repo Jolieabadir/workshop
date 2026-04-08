@@ -1,15 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { BUILDER_SYSTEM_PROMPT, BUILDER_TOOLS } from '@/lib/builder-prompt';
-import type { BuilderAction, CanvasState, NodeType, NodeShape, Vec3 } from '@/types/canvas';
+import type { BuilderAction, CanvasState, NodeType, NodeShape, Vec3, IntentType, HandGesture } from '@/types/canvas';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+/** Structured intent from Input Manager */
+interface IntentData {
+  type: IntentType;
+  targetNodeId?: string;
+  secondaryNodeId?: string;
+  position?: Vec3;
+  gesture?: HandGesture;
+  resolvedReferences: {
+    thisNode?: string;
+    thatNode?: string;
+    herePosition?: Vec3;
+    therePosition?: Vec3;
+  };
+}
+
 interface AgentRequest {
   transcript: string;
   canvasState: CanvasState;
+  intent?: IntentData | null;
 }
 
 function formatCanvasStateForLLM(state: CanvasState): string {
@@ -50,6 +66,63 @@ function formatCanvasStateForLLM(state: CanvasState): string {
   }
 
   return output;
+}
+
+/** Format intent context for the Builder prompt */
+function formatIntentContext(intent: IntentData, state: CanvasState): string {
+  const parts: string[] = [];
+
+  parts.push(`## Spatial Context (from Input Manager)`);
+  parts.push(`Intent type: ${intent.type}`);
+
+  if (intent.targetNodeId) {
+    const node = state.nodes[intent.targetNodeId];
+    if (node) {
+      parts.push(`User is pointing at: "${node.title || node.content.slice(0, 30)}" (ID: ${intent.targetNodeId})`);
+    } else {
+      parts.push(`Target node ID: ${intent.targetNodeId}`);
+    }
+  }
+
+  if (intent.secondaryNodeId) {
+    const node = state.nodes[intent.secondaryNodeId];
+    if (node) {
+      parts.push(`Secondary reference: "${node.title || node.content.slice(0, 30)}" (ID: ${intent.secondaryNodeId})`);
+    }
+  }
+
+  if (intent.position) {
+    parts.push(`Target position: (${intent.position.x.toFixed(1)}, ${intent.position.y.toFixed(1)}, ${intent.position.z.toFixed(1)})`);
+  }
+
+  if (intent.gesture && intent.gesture !== 'none') {
+    parts.push(`Active gesture: ${intent.gesture}`);
+  }
+
+  // Resolved references
+  const refs = intent.resolvedReferences;
+  if (refs.thisNode || refs.thatNode) {
+    const refParts: string[] = [];
+    if (refs.thisNode) {
+      const node = state.nodes[refs.thisNode];
+      refParts.push(`"this" → ${node ? `"${node.title || node.id}"` : refs.thisNode}`);
+    }
+    if (refs.thatNode) {
+      const node = state.nodes[refs.thatNode];
+      refParts.push(`"that" → ${node ? `"${node.title || node.id}"` : refs.thatNode}`);
+    }
+    parts.push(`Resolved references: ${refParts.join(', ')}`);
+  }
+
+  if (refs.herePosition) {
+    parts.push(`"here" → (${refs.herePosition.x.toFixed(1)}, ${refs.herePosition.y.toFixed(1)}, ${refs.herePosition.z.toFixed(1)})`);
+  }
+
+  if (refs.therePosition) {
+    parts.push(`"there" → (${refs.therePosition.x.toFixed(1)}, ${refs.therePosition.y.toFixed(1)}, ${refs.therePosition.z.toFixed(1)})`);
+  }
+
+  return parts.join('\n');
 }
 
 function parseToolCallToAction(toolName: string, toolInput: Record<string, unknown>): BuilderAction | null {
@@ -114,13 +187,23 @@ function parseToolCallToAction(toolName: string, toolInput: Record<string, unkno
 export async function POST(request: NextRequest) {
   try {
     const body: AgentRequest = await request.json();
-    const { transcript, canvasState } = body;
+    const { transcript, canvasState, intent } = body;
 
     if (!transcript || transcript.trim() === '') {
       return NextResponse.json({ actions: [] });
     }
 
     const canvasContext = formatCanvasStateForLLM(canvasState);
+
+    // Build the user message with optional intent context
+    let userMessage = canvasContext;
+
+    if (intent) {
+      const intentContext = formatIntentContext(intent, canvasState);
+      userMessage += `\n\n${intentContext}`;
+    }
+
+    userMessage += `\n\n---\n\nUser says: "${transcript}"`;
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -131,7 +214,7 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'user',
-          content: `${canvasContext}\n\n---\n\nUser says: "${transcript}"`,
+          content: userMessage,
         },
       ],
     });

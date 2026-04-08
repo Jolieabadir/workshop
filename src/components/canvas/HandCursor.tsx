@@ -20,10 +20,14 @@ export function HandCursor() {
   const materialRef = useRef<THREE.MeshStandardMaterial>(null);
   const glowMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
 
-  const position = useHandStore((s) => s.position);
-  const gesture = useHandStore((s) => s.gesture);
+  // Use right hand for cursor (interaction hand)
+  const rightHand = useHandStore((s) => s.rightHand);
   const grabbedNodeId = useHandStore((s) => s.grabbedNodeId);
   const isTracking = useHandStore((s) => s.isTracking);
+
+  const position = rightHand.position;
+  const gesture = rightHand.gesture;
+  const isDetected = rightHand.isDetected;
 
   // Smoothed position for lerping
   const smoothedPos = useRef(new THREE.Vector3(0, 2, 2));
@@ -72,8 +76,8 @@ export function HandCursor() {
     const glowScale = targetScale * 2.5;
     glowRef.current.scale.lerp(new THREE.Vector3(glowScale, glowScale, glowScale), delta * 8);
 
-    // Hide if not tracking or no position
-    const visible = isTracking && position !== null;
+    // Hide if right hand not detected or no position
+    const visible = isTracking && isDetected && position !== null;
     meshRef.current.visible = visible;
     glowRef.current.visible = visible;
   });

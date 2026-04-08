@@ -1,12 +1,76 @@
 'use client';
 
-import { Canvas } from '@react-three/fiber';
+import { useRef } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Stars, Grid } from '@react-three/drei';
+import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
 import { useCanvasStore } from '@/store/canvas-store';
+import { useHandStore } from '@/store/hand-store';
 import { IdeaNode } from './IdeaNode';
 import { ConnectionLine } from './ConnectionLine';
 import { BuilderAvatar } from './BuilderAvatar';
 import { HandCursor } from './HandCursor';
+
+// Smoothing factor for camera movement (lower = smoother)
+const CAMERA_SMOOTHING = 0.08;
+
+function HandControlledOrbitControls() {
+  const controlsRef = useRef<OrbitControlsType>(null);
+
+  // Get camera control state from left hand
+  const cameraControl = useHandStore((s) => s.cameraControl);
+
+  useFrame(() => {
+    const controls = controlsRef.current;
+    if (!controls || !cameraControl.isActive) return;
+
+    // Apply camera rotation deltas from left hand
+    // Azimuth = horizontal rotation (left-right)
+    // Polar = vertical rotation (up-down)
+
+    if (cameraControl.azimuthDelta !== 0) {
+      // Smoothly rotate horizontally
+      const targetAzimuth = controls.getAzimuthalAngle() + cameraControl.azimuthDelta * CAMERA_SMOOTHING;
+      controls.setAzimuthalAngle(targetAzimuth);
+    }
+
+    if (cameraControl.polarDelta !== 0) {
+      // Smoothly rotate vertically (clamped by OrbitControls min/max polar angle)
+      const currentPolar = controls.getPolarAngle();
+      const targetPolar = currentPolar + cameraControl.polarDelta * CAMERA_SMOOTHING;
+      controls.setPolarAngle(targetPolar);
+    }
+
+    if (cameraControl.zoomDelta !== 0) {
+      // Zoom in/out by adjusting distance
+      const currentDistance = controls.getDistance();
+      const targetDistance = currentDistance - cameraControl.zoomDelta * CAMERA_SMOOTHING;
+      // Clamp to min/max distance
+      const clampedDistance = Math.max(controls.minDistance, Math.min(controls.maxDistance, targetDistance));
+
+      // Move camera to new distance while maintaining direction
+      const direction = controls.target.clone().sub(controls.object.position).normalize();
+      controls.object.position.copy(controls.target).sub(direction.multiplyScalar(clampedDistance));
+    }
+
+    controls.update();
+  });
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      makeDefault
+      enableDamping
+      dampingFactor={0.1}
+      minDistance={2}
+      maxDistance={50}
+      enablePan
+      // Constrain polar angle to prevent flipping
+      minPolarAngle={Math.PI * 0.1}
+      maxPolarAngle={Math.PI * 0.85}
+    />
+  );
+}
 
 function SceneContent() {
   const nodes = useCanvasStore((s) => s.nodes);
@@ -44,18 +108,11 @@ function SceneContent() {
       {/* Builder avatar */}
       <BuilderAvatar />
 
-      {/* Hand cursor (follows hand tracking) */}
+      {/* Hand cursor (follows right hand tracking) */}
       <HandCursor />
 
-      {/* Camera controls */}
-      <OrbitControls
-        makeDefault
-        enableDamping
-        dampingFactor={0.1}
-        minDistance={2}
-        maxDistance={50}
-        enablePan
-      />
+      {/* Camera controls (responds to left hand) */}
+      <HandControlledOrbitControls />
     </>
   );
 }
