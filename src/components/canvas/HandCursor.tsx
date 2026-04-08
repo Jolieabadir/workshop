@@ -92,12 +92,15 @@ export function HandCursor() {
     if (!isDetected || !screenPosition) return;
 
     // Convert screen position (0-1) to normalized device coordinates (-1 to 1)
-    // MediaPipe gives mirrored X, so we flip it
-    pointer.current.x = (1 - screenPosition.x) * 2 - 1;
-    pointer.current.y = -(screenPosition.y) * 2 + 1;
+    // Formula: x * 2 - 1 maps [0,1] to [-1,1]
+    // Y is inverted because screen Y increases downward, NDC Y increases upward
+    const ndc = new THREE.Vector2(
+      screenPosition.x * 2 - 1,
+      -(screenPosition.y * 2 - 1)
+    );
 
     // Update raycaster from camera
-    raycaster.current.setFromCamera(pointer.current, camera);
+    raycaster.current.setFromCamera(ndc, camera);
 
     // Intersect all scene objects recursively
     const intersects = raycaster.current.intersectObjects(scene.children, true);
@@ -117,12 +120,41 @@ export function HandCursor() {
       if (hitNodeId) break;
     }
 
-    // Update hover and focus state
-    if (hitNodeId) {
-      useCanvasStore.getState().pushFocus(hitNodeId);
-      useHandStore.getState().setHoveredNode(hitNodeId);
+    // Get current state
+    const handStore = useHandStore.getState();
+    const canvasStore = useCanvasStore.getState();
+    const currentGrabbedId = handStore.grabbedNodeId;
+    const currentHoveredId = handStore.hoveredNodeId;
+
+    // Update hover state
+    if (hitNodeId && hitNodeId !== currentHoveredId) {
+      canvasStore.pushFocus(hitNodeId);
+      handStore.setHoveredNode(hitNodeId);
+    } else if (!hitNodeId && currentHoveredId) {
+      handStore.setHoveredNode(null);
+    }
+
+    // Handle PINCH gesture for grab/move
+    if (gesture === 'pinch') {
+      if (!currentGrabbedId && hitNodeId) {
+        // Start grabbing the hovered node
+        console.log('[HandCursor] Grabbing node:', hitNodeId);
+        handStore.setGrabbedNode(hitNodeId);
+        canvasStore.pushFocus(hitNodeId);
+      } else if (currentGrabbedId && position) {
+        // Move the grabbed node to cursor position
+        canvasStore.moveNode(currentGrabbedId, {
+          x: position.x,
+          y: Math.max(0.5, position.y), // Keep above ground
+          z: position.z,
+        });
+      }
     } else {
-      useHandStore.getState().setHoveredNode(null);
+      // Not pinching - release any grabbed node
+      if (currentGrabbedId) {
+        console.log('[HandCursor] Releasing node:', currentGrabbedId);
+        handStore.setGrabbedNode(null);
+      }
     }
   });
 

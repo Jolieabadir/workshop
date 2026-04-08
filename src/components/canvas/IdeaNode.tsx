@@ -70,13 +70,16 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   const isHandHovered = hoveredNodeId === node.id;
   const isHandGrabbed = grabbedNodeId === node.id;
 
-  // Set userData for raycaster detection
+  // Set userData for raycaster detection on ALL objects in this node
+  // This runs on mount and whenever node.id changes
   useEffect(() => {
-    if (meshRef.current) {
-      meshRef.current.userData = { nodeId: node.id };
-    }
+    // Set on group (outer container)
     if (groupRef.current) {
       groupRef.current.userData = { nodeId: node.id };
+      // Also set on all children recursively
+      groupRef.current.traverse((child) => {
+        child.userData = { ...child.userData, nodeId: node.id };
+      });
     }
   }, [node.id]);
 

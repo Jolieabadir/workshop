@@ -3,8 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { useHandStore } from '@/store/hand-store';
-import { useCanvasStore } from '@/store/canvas-store';
-import type { Vec3, HandGesture, Handedness } from '@/types/canvas';
+import type { Vec3, HandGesture } from '@/types/canvas';
 
 // MediaPipe hand landmark indices
 const THUMB_TIP = 4;
@@ -20,7 +19,6 @@ const PINKY_MCP = 17;
 // Gesture thresholds
 const PINCH_THRESHOLD = 0.08;
 const OPEN_PALM_THRESHOLD = 0.15;
-const GRAB_DISTANCE_3D = 1.5;
 
 // Camera control sensitivity
 const CAMERA_AZIMUTH_SENSITIVITY = 2.0;
@@ -71,19 +69,11 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   const setLeftHandDetected = useHandStore((s) => s.setLeftHandDetected);
   const setRightHand = useHandStore((s) => s.setRightHand);
   const setRightHandDetected = useHandStore((s) => s.setRightHandDetected);
-  const setGrabbedNode = useHandStore((s) => s.setGrabbedNode);
-  const setHoveredNode = useHandStore((s) => s.setHoveredNode);
   const setCameraControl = useHandStore((s) => s.setCameraControl);
   const reset = useHandStore((s) => s.reset);
 
-  const grabbedNodeId = useHandStore((s) => s.grabbedNodeId);
   const leftHandGesture = useHandStore((s) => s.leftHand.gesture);
   const rightHandGesture = useHandStore((s) => s.rightHand.gesture);
-
-  // Canvas store for node interaction
-  const nodes = useCanvasStore((s) => s.nodes);
-  const moveNode = useCanvasStore((s) => s.moveNode);
-  const pushFocus = useCanvasStore((s) => s.pushFocus);
 
   // Check if landmarks jumped too much (detection reset)
   // Returns true if any landmark moved more than MAX_LANDMARK_JUMP in x or y
@@ -198,26 +188,6 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     };
   }, []);
 
-  // Find nearest node to a 3D position
-  const findNearestNode = useCallback((pos: Vec3): string | null => {
-    let nearestId: string | null = null;
-    let nearestDist = Infinity;
-
-    for (const node of Object.values(nodes)) {
-      const dist = Math.sqrt(
-        Math.pow(node.position.x - pos.x, 2) +
-        Math.pow(node.position.y - pos.y, 2) +
-        Math.pow(node.position.z - pos.z, 2)
-      );
-      if (dist < nearestDist && dist < GRAB_DISTANCE_3D) {
-        nearestDist = dist;
-        nearestId = node.id;
-      }
-    }
-
-    return nearestId;
-  }, [nodes]);
-
   // Process LEFT HAND for camera navigation
   const processLeftHand = useCallback((
     landmarks: { x: number; y: number; z: number }[]
@@ -297,7 +267,8 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     }
   }, [getPalmCenter, detectGesture, setLeftHand, setCameraControl]);
 
-  // Process RIGHT HAND for node interaction
+  // Process RIGHT HAND - only update hand store with position/gesture
+  // Node interaction is handled by HandCursor via raycasting
   const processRightHand = useCallback((
     landmarks: { x: number; y: number; z: number }[]
   ) => {
@@ -313,29 +284,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       gesture,
       pinchDistance: pinchDist,
     });
-
-    // Handle node interactions
-    const nearestNode = findNearestNode(pos3D);
-
-    if (gesture === 'pinch') {
-      if (!grabbedNodeId && nearestNode) {
-        setGrabbedNode(nearestNode);
-        pushFocus(nearestNode);
-      } else if (grabbedNodeId) {
-        moveNode(grabbedNodeId, pos3D);
-      }
-    } else {
-      if (grabbedNodeId) {
-        setGrabbedNode(null);
-      }
-    }
-
-    if (gesture === 'point') {
-      setHoveredNode(nearestNode);
-    } else if (gesture !== 'pinch') {
-      setHoveredNode(null);
-    }
-  }, [screenTo3D, detectGesture, findNearestNode, setRightHand, setGrabbedNode, setHoveredNode, grabbedNodeId, moveNode, pushFocus]);
+  }, [screenTo3D, detectGesture, setRightHand]);
 
   // Process hand landmarks and update state
   const processResults = useCallback((results: HandLandmarkerResult) => {
@@ -404,14 +353,11 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     }
     if (!rightDetected) {
       setRightHandDetected(false);
-      if (grabbedNodeId) {
-        setGrabbedNode(null);
-      }
-      setHoveredNode(null);
+      // Note: HandCursor handles clearing grabbed/hovered state via raycasting
       smoothedRightLandmarksRef.current = null; // Reset smoothing state
       prevRawRightLandmarksRef.current = null; // Reset velocity check state
     }
-  }, [processLeftHand, processRightHand, smoothLandmarks, hasLandmarkJump, leftHandGesture, rightHandGesture, setLeftHandDetected, setRightHandDetected, setCameraControl, grabbedNodeId, setGrabbedNode, setHoveredNode]);
+  }, [processLeftHand, processRightHand, smoothLandmarks, hasLandmarkJump, leftHandGesture, rightHandGesture, setLeftHandDetected, setRightHandDetected, setCameraControl]);
 
   // Draw hand landmarks with gesture visualization
   const drawHandLandmarks = (

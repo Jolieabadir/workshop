@@ -11,10 +11,9 @@ import { IdeaNode } from './IdeaNode';
 import { ConnectionLine } from './ConnectionLine';
 import { BuilderAvatar } from './BuilderAvatar';
 import { HandCursor } from './HandCursor';
-import { HandRaycaster } from './HandRaycaster';
 
 // Smoothing factor for camera movement (lower = smoother)
-const CAMERA_SMOOTHING = 0.08;
+const CAMERA_SMOOTHING = 0.04;
 
 /** Visual indicator for where the next node will be placed (right hand open palm) */
 function PlacementIndicator() {
@@ -83,6 +82,11 @@ function HandControlledOrbitControls() {
 
   // Get camera control state from left hand
   const cameraControl = useHandStore((s) => s.cameraControl);
+  const isTracking = useHandStore((s) => s.isTracking);
+  const leftHandDetected = useHandStore((s) => s.leftHand.isDetected);
+
+  // Disable mouse controls when hand tracking is active to prevent fighting
+  const disableMouseControls = isTracking && leftHandDetected;
 
   useFrame(() => {
     const controls = controlsRef.current;
@@ -129,6 +133,9 @@ function HandControlledOrbitControls() {
       minDistance={2}
       maxDistance={50}
       enablePan
+      // Disable mouse rotation/zoom when left hand is controlling camera
+      enableRotate={!disableMouseControls}
+      enableZoom={!disableMouseControls}
       // Constrain polar angle to prevent flipping
       minPolarAngle={Math.PI * 0.1}
       maxPolarAngle={Math.PI * 0.85}
@@ -172,11 +179,8 @@ function SceneContent() {
       {/* Builder avatar */}
       <BuilderAvatar />
 
-      {/* Hand cursor (follows right hand tracking) */}
+      {/* Hand cursor (follows right hand tracking + handles raycasting interaction) */}
       <HandCursor />
-
-      {/* Hand raycaster (handles node intersection and interaction) */}
-      <HandRaycaster />
 
       {/* Placement indicator (shows where right hand open palm is pointing) */}
       <PlacementIndicator />
