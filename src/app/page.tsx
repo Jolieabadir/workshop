@@ -213,6 +213,44 @@ export default function Home() {
       console.log('[PIPELINE] ALL ACTIONS:', JSON.stringify(actions.map(a => a.type)));
       console.log('[PIPELINE] TTS ACTIONS:', actions.filter(a => a.type === 'respond_verbally'));
 
+      // Helper: Play TTS via Deepgram Aura (natural voice)
+      const speakWithDeepgram = async (text: string) => {
+        try {
+          console.log('[TTS] Calling Deepgram Aura:', text);
+          const ttsResponse = await fetch('/api/speech/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voice: 'aura-asteria-en' }),
+          });
+
+          if (!ttsResponse.ok) {
+            throw new Error(`TTS API error: ${ttsResponse.status}`);
+          }
+
+          const audioBlob = await ttsResponse.blob();
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            setIsSpeaking(false);
+          };
+          audio.onerror = () => {
+            URL.revokeObjectURL(audioUrl);
+            setIsSpeaking(false);
+          };
+
+          setIsSpeaking(true);
+          await audio.play();
+        } catch (err) {
+          console.error('[TTS] Deepgram failed, falling back to Web Speech:', err);
+          // Fallback to Web Speech API
+          const u = new SpeechSynthesisUtterance(text);
+          u.rate = 1.0;
+          window.speechSynthesis.speak(u);
+        }
+      };
+
       // Execute each action and track what was done
       let hadTTS = false;
       const canvasActions: string[] = [];
@@ -221,13 +259,10 @@ export default function Home() {
         console.log('[PIPELINE] 4. Executing action:', action.type, action);
         store.executeAction(action);
 
-        // Handle TTS for verbal responses - NUCLEAR FIX: bypass tts-player entirely
+        // Handle TTS for verbal responses - use Deepgram Aura for natural voice
         if (action.type === 'respond_verbally' && action.message) {
-          console.log('[PIPELINE] 5. DIRECT TTS:', action.message);
-          const u = new SpeechSynthesisUtterance(action.message);
-          u.rate = 1.0;
-          u.pitch = 1.0;
-          window.speechSynthesis.speak(u);
+          console.log('[PIPELINE] 5. TTS via Deepgram:', action.message);
+          speakWithDeepgram(action.message);
           hadTTS = true;
         } else if (action.type === 'create_node') {
           canvasActions.push(`created ${action.title || 'node'}`);
@@ -247,11 +282,8 @@ export default function Home() {
       // FALLBACK: If Builder didn't call respond_verbally but did canvas actions, auto-generate TTS
       if (!hadTTS && canvasActions.length > 0) {
         const fallbackMessage = canvasActions.join(' and ');
-        console.log('[PIPELINE] 5. FALLBACK TTS (Builder forgot respond_verbally):', fallbackMessage);
-        const u = new SpeechSynthesisUtterance(fallbackMessage);
-        u.rate = 1.0;
-        u.pitch = 1.0;
-        window.speechSynthesis.speak(u);
+        console.log('[PIPELINE] 5. FALLBACK TTS:', fallbackMessage);
+        speakWithDeepgram(fallbackMessage);
       }
 
       // Log actions to Safety Supervisor

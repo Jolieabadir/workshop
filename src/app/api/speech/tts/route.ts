@@ -35,9 +35,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       );
     }
 
-    // Call Deepgram Aura TTS API
+    // Call Deepgram Aura TTS API - use MP3 for browser compatibility
     const deepgramResponse = await fetch(
-      `https://api.deepgram.com/v1/speak?model=${voice}&encoding=linear16&sample_rate=24000`,
+      `https://api.deepgram.com/v1/speak?model=${voice}&encoding=mp3`,
       {
         method: 'POST',
         headers: {
@@ -71,8 +71,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return new Response(audioStream, {
       status: 200,
       headers: {
-        'Content-Type': 'audio/wav',
-        'Transfer-Encoding': 'chunked',
+        'Content-Type': 'audio/mpeg',
         'Cache-Control': 'no-cache',
       },
     });
