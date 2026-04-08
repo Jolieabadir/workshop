@@ -47,6 +47,9 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   // Track previous palm positions for delta calculation
   const prevLeftPalmRef = useRef<{ x: number; y: number; z: number } | null>(null);
 
+  // Track previous pinch distance for zoom delta calculation
+  const prevLeftPinchRef = useRef<number | null>(null);
+
   // Smoothed landmarks for each hand (EMA smoothing to kill jitter)
   const smoothedLeftLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
   const smoothedRightLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
@@ -188,9 +191,6 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
 
     return nearestId;
   }, [nodes]);
-
-  // Track previous pinch distance for zoom delta calculation
-  const prevLeftPinchRef = useRef<number | null>(null);
 
   // Process LEFT HAND for camera navigation
   const processLeftHand = useCallback((
