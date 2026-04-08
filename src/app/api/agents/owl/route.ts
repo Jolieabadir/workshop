@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     userMessage += '\n\n---\n\nAnalyze this canvas for contradictions, missing connections, and completeness gaps. Be concise and only flag clear issues.';
 
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-20250514',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 512,
       system: OWL_SYSTEM_PROMPT,
       tools: OWL_TOOLS,
