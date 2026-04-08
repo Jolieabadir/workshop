@@ -27,6 +27,11 @@ const CAMERA_POLAR_SENSITIVITY = 1.5;
 const CAMERA_ZOOM_SENSITIVITY = 3.0;
 const CAMERA_DEADZONE = 0.1; // Center deadzone where no movement occurs
 
+// Smoothing factor for EMA (exponential moving average)
+// position = alpha * newPos + (1-alpha) * lastPos
+// Lower alpha = smoother but more latency, higher = responsive but jittery
+const SMOOTHING_ALPHA = 0.3;
+
 interface HandTrackerProps {
   enabled?: boolean;
 }
@@ -40,6 +45,10 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
 
   // Track previous palm positions for delta calculation
   const prevLeftPalmRef = useRef<{ x: number; y: number; z: number } | null>(null);
+
+  // Smoothed landmarks for each hand (EMA smoothing to kill jitter)
+  const smoothedLeftLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
+  const smoothedRightLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +72,28 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   const nodes = useCanvasStore((s) => s.nodes);
   const moveNode = useCanvasStore((s) => s.moveNode);
   const pushFocus = useCanvasStore((s) => s.pushFocus);
+
+  // Apply EMA smoothing to landmarks: smoothed = alpha * new + (1-alpha) * prev
+  const smoothLandmarks = useCallback((
+    newLandmarks: { x: number; y: number; z: number }[],
+    prevSmoothed: { x: number; y: number; z: number }[] | null,
+    alpha: number = SMOOTHING_ALPHA
+  ): { x: number; y: number; z: number }[] => {
+    if (!prevSmoothed) {
+      // First frame - no previous data, use raw
+      return newLandmarks.map(lm => ({ ...lm }));
+    }
+
+    // Apply EMA to each landmark
+    return newLandmarks.map((lm, i) => {
+      const prev = prevSmoothed[i];
+      return {
+        x: alpha * lm.x + (1 - alpha) * prev.x,
+        y: alpha * lm.y + (1 - alpha) * prev.y,
+        z: alpha * lm.z + (1 - alpha) * prev.z,
+      };
+    });
+  }, []);
 
   // Calculate distance between two landmarks
   const landmarkDistance = useCallback((
@@ -279,7 +310,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
 
     if (results.landmarks && results.landmarks.length > 0 && results.handednesses) {
       for (let i = 0; i < results.landmarks.length; i++) {
-        const landmarks = results.landmarks[i];
+        const rawLandmarks = results.landmarks[i];
         const handedness = results.handednesses[i]?.[0];
 
         if (!handedness) continue;
@@ -291,12 +322,18 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
 
         if (isLeftHand) {
           leftDetected = true;
-          processLeftHand(landmarks);
-          drawHandLandmarks(ctx, landmarks, canvas.width, canvas.height, leftHandGesture, 'Left');
+          // Apply EMA smoothing to reduce jitter
+          const smoothed = smoothLandmarks(rawLandmarks, smoothedLeftLandmarksRef.current);
+          smoothedLeftLandmarksRef.current = smoothed;
+          processLeftHand(smoothed);
+          drawHandLandmarks(ctx, smoothed, canvas.width, canvas.height, leftHandGesture, 'Left');
         } else if (isRightHand) {
           rightDetected = true;
-          processRightHand(landmarks);
-          drawHandLandmarks(ctx, landmarks, canvas.width, canvas.height, rightHandGesture, 'Right');
+          // Apply EMA smoothing to reduce jitter
+          const smoothed = smoothLandmarks(rawLandmarks, smoothedRightLandmarksRef.current);
+          smoothedRightLandmarksRef.current = smoothed;
+          processRightHand(smoothed);
+          drawHandLandmarks(ctx, smoothed, canvas.width, canvas.height, rightHandGesture, 'Right');
         }
       }
     }
