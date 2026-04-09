@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape, Badge } from '@/core/types';
+import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape, Badge, ComponentType, ComponentData } from '@/core/types';
+import { getConnectorPointsForComponent } from '@/components/canvas/generators';
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -121,6 +122,7 @@ interface PlacementContext {
 interface CanvasStore extends CanvasState {
   // Direct mutations
   addNode: (type: NodeType, content: string, title?: string, position?: Vec3, shape?: NodeShape, context?: PlacementContext) => string;
+  addComponent: (componentType: ComponentType, params: Record<string, unknown>, title: string, position?: Vec3, rotation?: Vec3) => string;
   removeNode: (id: string) => void;
   updateNode: (id: string, changes: Partial<CanvasNode>) => void;
   moveNode: (id: string, position: Vec3) => void;
@@ -191,6 +193,46 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
     }));
     // Move builder avatar toward the new node
+    get().setBuilderTarget(pos);
+    return id;
+  },
+
+  addComponent: (componentType, params, title, position, rotation) => {
+    const id = uid();
+    const now = Date.now();
+    // Use explicit position or find context-aware position
+    const state = get();
+    const pos = position ?? findContextAwarePosition(state.nodes, state.groups);
+
+    // Get connector points for this component type
+    const connectorPoints = getConnectorPointsForComponent(componentType, params);
+
+    // Create component data
+    const componentData: ComponentData = {
+      componentType,
+      params,
+      connectorPoints,
+      rotation,
+    };
+
+    set((s) => ({
+      nodes: {
+        ...s.nodes,
+        [id]: {
+          id,
+          type: 'text_card' as NodeType,
+          shape: 'cube' as NodeShape, // Use cube as base shape for components
+          content: `${componentType}: ${title}`,
+          title,
+          position: pos,
+          createdAt: now,
+          updatedAt: now,
+          component: componentData,
+        },
+      },
+      focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
+    }));
+    // Move builder avatar toward the new component
     get().setBuilderTarget(pos);
     return id;
   },
@@ -333,6 +375,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           action.position,
           action.shape,
           action.connectedToId ? { connectedToId: action.connectedToId } : undefined
+        );
+        break;
+      case 'create_component':
+        store.addComponent(
+          action.componentType,
+          action.params,
+          action.title,
+          action.position,
+          action.rotation
         );
         break;
       case 'create_connection':

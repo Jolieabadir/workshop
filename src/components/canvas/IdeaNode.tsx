@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import type { CanvasNode, NodeType, NodeShape } from '@/core/types';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
+import { ComponentGenerator } from './generators';
 
 interface IdeaNodeProps {
   node: CanvasNode;
@@ -161,6 +162,19 @@ export function IdeaNode({ node }: IdeaNodeProps) {
 
   // Render the appropriate 3D shape based on node.shape (type determines color, shape determines geometry)
   const renderShape = () => {
+    // If node has component data, render the electronic component instead of primitive shape
+    if (node.component) {
+      const rotation = node.component.rotation;
+      return (
+        <group rotation={rotation ? [rotation.x, rotation.y, rotation.z] : [0, 0, 0]}>
+          <ComponentGenerator
+            componentType={node.component.componentType}
+            params={node.component.params}
+          />
+        </group>
+      );
+    }
+
     const material = (
       <meshStandardMaterial
         ref={materialRef}

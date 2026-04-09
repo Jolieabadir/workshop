@@ -43,6 +43,47 @@ export const BUILDER_TOOLS: Tool[] = [
     },
   },
   {
+    name: 'create_component',
+    description: 'Create a realistic 3D electronic component on the canvas. Use this instead of create_node when building circuits or hardware systems.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        componentType: {
+          type: 'string',
+          enum: ['resistor', 'capacitor', 'ic', 'led', 'connector'],
+          description: 'The type of electronic component to create.',
+        },
+        params: {
+          type: 'object',
+          description: 'Component-specific parameters. Resistor: { value: "470Ω", colorBands: ["yellow","violet","brown"] }. Capacitor: { value: "100μF", type: "electrolytic" }. IC: { pinCount: 8, label: "LM7805" }. LED: { color: "#ff0000" }. Connector: { pinCount: 8, rows: 2 }.',
+        },
+        title: {
+          type: 'string',
+          description: 'Label for the component, e.g. "100μF Filter Cap"',
+        },
+        position: {
+          type: 'object',
+          properties: {
+            x: { type: 'number' },
+            y: { type: 'number' },
+            z: { type: 'number' },
+          },
+          description: 'Optional 3D position. If omitted, placed near camera with random offset.',
+        },
+        rotation: {
+          type: 'object',
+          properties: {
+            x: { type: 'number' },
+            y: { type: 'number' },
+            z: { type: 'number' },
+          },
+          description: 'Rotation in radians. Use to orient components correctly in the circuit layout.',
+        },
+      },
+      required: ['componentType', 'title'],
+    },
+  },
+  {
     name: 'create_connection',
     description: 'Create a connection/edge between two existing nodes to show a relationship.',
     input_schema: {

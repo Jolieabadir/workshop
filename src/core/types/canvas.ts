@@ -23,6 +23,24 @@ export interface Vec3 {
   z: number;
 }
 
+/** Type of electronic component */
+export type ComponentType = 'resistor' | 'capacitor' | 'ic' | 'led' | 'connector';
+
+/** Connector point on an electronic component (where wires attach) */
+export interface ComponentConnectorPoint {
+  id: string;
+  position: Vec3;
+  direction: Vec3;
+}
+
+/** Data for an electronic component node */
+export interface ComponentData {
+  componentType: ComponentType;
+  params: Record<string, unknown>;
+  connectorPoints: ComponentConnectorPoint[];
+  rotation?: Vec3;
+}
+
 /** A single idea-node floating in 3D space */
 export interface CanvasNode {
   id: string;
@@ -39,6 +57,8 @@ export interface CanvasNode {
   updatedAt: number;
   /** Warnings or info badges added by the mechanic crew */
   badges?: Badge[];
+  /** Optional electronic component data (renders as 3D component instead of primitive shape) */
+  component?: ComponentData;
 }
 
 export interface Badge {

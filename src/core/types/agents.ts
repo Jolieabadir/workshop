@@ -2,11 +2,12 @@
 // Workshop — Agent Types
 // ============================================================
 
-import type { CanvasNode, NodeType, NodeShape, Vec3 } from './canvas';
+import type { CanvasNode, NodeType, NodeShape, Vec3, ComponentType } from './canvas';
 
 /** Actions the Builder can perform via tool calls */
 export type BuilderAction =
   | { type: 'create_node'; nodeType: NodeType; shape: NodeShape; content: string; title?: string; position?: Vec3; connectedToId?: string }
+  | { type: 'create_component'; componentType: ComponentType; params: Record<string, unknown>; title: string; position?: Vec3; rotation?: Vec3 }
   | { type: 'create_connection'; fromId: string; toId: string; label?: string }
   | { type: 'group_nodes'; nodeIds: string[]; label: string }
   | { type: 'move_node'; nodeId: string; position: Vec3 }

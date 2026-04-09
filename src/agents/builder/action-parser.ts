@@ -2,7 +2,7 @@
 // Workshop — Builder Action Parser
 // ============================================================
 
-import type { BuilderAction, CanvasState, NodeType, NodeShape, Vec3, IntentType, HandGesture } from '@/core/types';
+import type { BuilderAction, CanvasState, NodeType, NodeShape, Vec3, IntentType, HandGesture, ComponentType } from '@/core/types';
 
 /** Structured intent from Input Manager */
 export interface IntentData {
@@ -231,6 +231,16 @@ export function parseToolCallToAction(toolName: string, toolInput: Record<string
         content: toolInput.content as string,
         title: toolInput.title as string | undefined,
         position: toolInput.position as Vec3 | undefined,
+      };
+
+    case 'create_component':
+      return {
+        type: 'create_component',
+        componentType: toolInput.componentType as ComponentType,
+        params: (toolInput.params as Record<string, unknown>) || {},
+        title: toolInput.title as string,
+        position: toolInput.position as Vec3 | undefined,
+        rotation: toolInput.rotation as Vec3 | undefined,
       };
 
     case 'create_connection':

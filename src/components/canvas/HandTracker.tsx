@@ -2,6 +2,7 @@
 
 // =============================================================================
 // HAND TRACKING - RIGHT HAND (Object Interaction)
+// With calibration - adapts to YOUR hand's range of motion
 // This tracker captures the user's RIGHT hand for pinch/grab and resize gestures.
 //
 // MIRROR NOTE: Webcam is CSS-mirrored (scaleX(-1)) for natural "mirror" display.
@@ -11,6 +12,7 @@
 //   MediaPipe "Left"  = user's LEFT hand (LeftHandTracker)
 //
 // X coordinates are flipped (1.0 - x) so cursor movement matches mirrored display.
+// Press 'R' to recalibrate
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react';
@@ -39,12 +41,33 @@ const FINGER_CURLED_THRESHOLD = 0.08;   // Distance from tip to palm for curled 
 // Smoothing factor for EMA (lower = smoother)
 const SMOOTHING_ALPHA = 0.25;
 
+// Calibration settings
+const CALIBRATION_DURATION = 18000; // 18 seconds
+const MIN_CALIBRATION_SAMPLES = 200;
+
+// Calibration target positions (normalized 0-1)
+// Pattern: center → corners → edges → center
+const CALIBRATION_TARGETS = [
+  { x: 0.5, y: 0.5, label: 'Center' },
+  { x: 0.2, y: 0.2, label: 'Top-Left' },
+  { x: 0.8, y: 0.2, label: 'Top-Right' },
+  { x: 0.8, y: 0.8, label: 'Bottom-Right' },
+  { x: 0.2, y: 0.8, label: 'Bottom-Left' },
+  { x: 0.5, y: 0.2, label: 'Top' },
+  { x: 0.8, y: 0.5, label: 'Right' },
+  { x: 0.5, y: 0.8, label: 'Bottom' },
+  { x: 0.2, y: 0.5, label: 'Left' },
+  { x: 0.5, y: 0.5, label: 'Center' },
+];
+const TARGET_DURATION = CALIBRATION_DURATION / CALIBRATION_TARGETS.length;
+
 interface HandTrackerProps {
   enabled?: boolean;
 }
 
 export function HandTracker({ enabled = true }: HandTrackerProps) {
   const { videoRef, canvasRef, isReady } = useSharedWebcam();
+  const calibrationCanvasRef = useRef<HTMLCanvasElement>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const animationFrameRef = useRef<number>(0);
   const lastVideoTimeRef = useRef<number>(-1);
@@ -52,13 +75,53 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   // Smoothed landmarks
   const smoothedLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
 
+  // Calibration state
+  const calibrationRef = useRef<{
+    isCalibrating: boolean;
+    startTime: number;
+    minX: number; maxX: number;
+    minY: number; maxY: number;
+    samples: number;
+  } | null>(null);
+
+  const calibratedRangeRef = useRef<{
+    minX: number; maxX: number;
+    minY: number; maxY: number;
+    centerX: number; centerY: number;
+  } | null>(null);
+
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [currentTargetIndex, setCurrentTargetIndex] = useState(0);
+  const [isNearTarget, setIsNearTarget] = useState(false);
 
   // Hand store actions
   const setTracking = useHandStore((s) => s.setTracking);
   const setRightHand = useHandStore((s) => s.setRightHand);
   const setRightHandDetected = useHandStore((s) => s.setRightHandDetected);
   const reset = useHandStore((s) => s.reset);
+
+  // Reset calibration (can be triggered by pressing 'R')
+  const resetCalibration = useCallback(() => {
+    calibratedRangeRef.current = null;
+    calibrationRef.current = null;
+    setIsCalibrating(false);
+    setCalibrationProgress(0);
+    setCurrentTargetIndex(0);
+    setIsNearTarget(false);
+  }, []);
+
+  // Keyboard listener for recalibration
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'r' || e.key === 'R') {
+        resetCalibration();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [resetCalibration]);
 
   // Calculate distance between two landmarks
   const landmarkDistance = useCallback((
@@ -132,33 +195,140 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     const smoothed = smoothLandmarks(landmarks, smoothedLandmarksRef.current);
     smoothedLandmarksRef.current = smoothed;
 
-    // Get index finger tip for cursor position (raw MediaPipe coordinates)
+    // Get index finger tip for cursor position
     const indexTip = smoothed[INDEX_TIP];
-    const screenPos = { x: indexTip.x, y: indexTip.y };
+    const currentX = 1.0 - indexTip.x; // flip for mirror
+    const currentY = indexTip.y;
 
     // Detect gesture
     const gesture = detectGesture(smoothed);
 
     // Calculate thumb-to-middle distance for resize gesture aperture
-    // This is used by HandRaycaster to determine scale factor
     const resizeAperture = landmarkDistance(smoothed, THUMB_TIP, MIDDLE_TIP);
 
-    // Update hand store
+    // Handle calibration
+    if (!calibratedRangeRef.current) {
+      const now = Date.now();
+
+      // Start calibration if not already running
+      if (!calibrationRef.current) {
+        calibrationRef.current = {
+          isCalibrating: true,
+          startTime: now,
+          minX: currentX,
+          maxX: currentX,
+          minY: currentY,
+          maxY: currentY,
+          samples: 1,
+        };
+        setIsCalibrating(true);
+        setCurrentTargetIndex(0);
+
+        // Update store with raw position during calibration
+        setRightHand({
+          isDetected: true,
+          screenPosition: { x: currentX, y: currentY },
+          gesture,
+          pinchDistance: resizeAperture,
+        });
+        return;
+      }
+
+      // Update calibration bounds
+      const cal = calibrationRef.current;
+      cal.minX = Math.min(cal.minX, currentX);
+      cal.maxX = Math.max(cal.maxX, currentX);
+      cal.minY = Math.min(cal.minY, currentY);
+      cal.maxY = Math.max(cal.maxY, currentY);
+      cal.samples++;
+
+      // Update progress and current target
+      const elapsed = now - cal.startTime;
+      const progress = Math.min(100, (elapsed / CALIBRATION_DURATION) * 100);
+      setCalibrationProgress(progress);
+
+      // Calculate which target we're on
+      const targetIndex = Math.min(
+        Math.floor(elapsed / TARGET_DURATION),
+        CALIBRATION_TARGETS.length - 1
+      );
+      setCurrentTargetIndex(targetIndex);
+
+      // Check if user's hand is near the current target
+      const target = CALIBRATION_TARGETS[targetIndex];
+      const distToTarget = Math.sqrt(
+        Math.pow(currentX - target.x, 2) + Math.pow(currentY - target.y, 2)
+      );
+      setIsNearTarget(distToTarget < 0.15);
+
+      // Check if calibration is complete
+      if (elapsed >= CALIBRATION_DURATION && cal.samples >= MIN_CALIBRATION_SAMPLES) {
+        const rangeX = cal.maxX - cal.minX;
+        const rangeY = cal.maxY - cal.minY;
+
+        if (rangeX > 0.1 && rangeY > 0.1) {
+          calibratedRangeRef.current = {
+            minX: cal.minX,
+            maxX: cal.maxX,
+            minY: cal.minY,
+            maxY: cal.maxY,
+            centerX: (cal.minX + cal.maxX) / 2,
+            centerY: (cal.minY + cal.maxY) / 2,
+          };
+        } else {
+          // Fallback to default range if calibration was too small
+          calibratedRangeRef.current = {
+            minX: 0.2, maxX: 0.8,
+            minY: 0.2, maxY: 0.8,
+            centerX: 0.5, centerY: 0.5,
+          };
+        }
+
+        calibrationRef.current = null;
+        setIsCalibrating(false);
+        setCalibrationProgress(100);
+        setCurrentTargetIndex(0);
+        setIsNearTarget(false);
+      }
+
+      // Update store with raw position during calibration
+      setRightHand({
+        isDetected: true,
+        screenPosition: { x: currentX, y: currentY },
+        gesture,
+        pinchDistance: resizeAperture,
+      });
+      return;
+    }
+
+    // Normal operation with calibrated range - normalize position
+    const range = calibratedRangeRef.current;
+    const rangeX = range.maxX - range.minX;
+    const rangeY = range.maxY - range.minY;
+
+    // Normalize to 0-1 based on calibrated range
+    const normalizedX = Math.max(0, Math.min(1, (currentX - range.minX) / rangeX));
+    const normalizedY = Math.max(0, Math.min(1, (currentY - range.minY) / rangeY));
+
+    // Update hand store with normalized position
     setRightHand({
       isDetected: true,
-      screenPosition: screenPos,
+      screenPosition: { x: normalizedX, y: normalizedY },
       gesture,
-      pinchDistance: resizeAperture, // Reusing pinchDistance field for resize aperture
+      pinchDistance: resizeAperture,
     });
   }, [smoothLandmarks, detectGesture, setRightHand, landmarkDistance]);
 
-  // Draw hand landmarks (pink for right hand, X-flipped for mirror display)
+  // Draw hand landmarks (pink for right hand)
   const drawHand = useCallback((
     ctx: CanvasRenderingContext2D,
     landmarks: { x: number; y: number; z: number }[],
     width: number,
-    height: number
+    height: number,
+    options?: { lineWidth?: number; pointSize?: number; mirror?: boolean }
   ) => {
+    const { lineWidth = 2, pointSize = 3, mirror = true } = options || {};
+
     const connections = [
       [0, 1], [1, 2], [2, 3], [3, 4],
       [0, 5], [5, 6], [6, 7], [7, 8],
@@ -169,10 +339,10 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     ];
 
     // Helper to flip X for mirror display
-    const getX = (x: number) => (1 - x) * width;
+    const getX = (x: number) => mirror ? (1 - x) * width : x * width;
 
     ctx.strokeStyle = '#ec4899';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = lineWidth;
     ctx.globalAlpha = 0.9;
 
     for (const [i, j] of connections) {
@@ -188,16 +358,16 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     ctx.fillStyle = '#ec4899';
     for (const lm of landmarks) {
       ctx.beginPath();
-      ctx.arc(getX(lm.x), lm.y * height, 3, 0, Math.PI * 2);
+      ctx.arc(getX(lm.x), lm.y * height, pointSize, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // Highlight index finger tip
     const indexTip = landmarks[INDEX_TIP];
     ctx.beginPath();
-    ctx.arc(getX(indexTip.x), indexTip.y * height, 8, 0, Math.PI * 2);
+    ctx.arc(getX(indexTip.x), indexTip.y * height, pointSize * 2.5, 0, Math.PI * 2);
     ctx.strokeStyle = '#f472b6';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = lineWidth;
     ctx.stroke();
 
     ctx.globalAlpha = 1;
@@ -207,9 +377,16 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   const processResults = useCallback((results: HandLandmarkerResult) => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
+    const calibrationCanvas = calibrationCanvasRef.current;
+    const calibrationCtx = calibrationCanvas?.getContext('2d');
 
     if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Clear calibration canvas if it exists
+    if (calibrationCanvas && calibrationCtx) {
+      calibrationCtx.clearRect(0, 0, calibrationCanvas.width, calibrationCanvas.height);
+    }
 
     // Find right hand in results
     if (results.landmarks && results.handedness) {
@@ -222,8 +399,19 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
           const landmarks = results.landmarks[i];
           processHand(landmarks);
 
-          // Draw hand visualization
-          drawHand(ctx, landmarks, canvas.width, canvas.height);
+          // Draw hand visualization on preview canvas
+          drawHand(ctx, landmarks, canvas.width, canvas.height, { mirror: true });
+
+          // Also draw on calibration canvas if calibrating
+          if (calibrationCanvas && calibrationCtx && isCalibrating) {
+            drawHand(
+              calibrationCtx,
+              landmarks,
+              calibrationCanvas.width,
+              calibrationCanvas.height,
+              { lineWidth: 4, pointSize: 8, mirror: true }
+            );
+          }
           return; // Found right hand, stop searching
         }
       }
@@ -232,7 +420,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     // No right hand detected
     setRightHandDetected(false);
     smoothedLandmarksRef.current = null;
-  }, [canvasRef, processHand, drawHand, setRightHandDetected]);
+  }, [canvasRef, processHand, drawHand, setRightHandDetected, isCalibrating]);
 
   // Initialize MediaPipe
   useEffect(() => {
@@ -304,7 +492,208 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     };
   }, [enabled, isInitialized, isReady, videoRef, setTracking, processResults, reset]);
 
-  // HandTracker no longer renders UI - SharedWebcam handles the video/canvas display
-  // This component just handles the MediaPipe detection logic for the right hand
-  return null;
+  // Render recalibration hint when calibrated but not calibrating
+  if (!isCalibrating && calibratedRangeRef.current) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          bottom: '102px',
+          right: '24px',
+          fontSize: '6px',
+          color: 'rgba(255,255,255,0.4)',
+          zIndex: 21,
+        }}
+      >
+        R to recal
+      </div>
+    );
+  }
+
+  // Render calibration overlay when calibrating
+  if (!isCalibrating) {
+    return null;
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(10, 10, 26, 0.95)',
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {/* Large calibration area */}
+      <div
+        style={{
+          position: 'relative',
+          width: '80vw',
+          height: '70vh',
+          maxWidth: '1200px',
+          maxHeight: '800px',
+          border: '2px solid rgba(236, 72, 153, 0.3)',
+          borderRadius: '24px',
+          background: 'rgba(0, 0, 0, 0.4)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Hand skeleton canvas */}
+        <canvas
+          ref={calibrationCanvasRef}
+          width={1200}
+          height={800}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+          }}
+        />
+        {/* Target indicator */}
+        {CALIBRATION_TARGETS[currentTargetIndex] && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${CALIBRATION_TARGETS[currentTargetIndex].x * 100}%`,
+              top: `${CALIBRATION_TARGETS[currentTargetIndex].y * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              width: isNearTarget ? '80px' : '60px',
+              height: isNearTarget ? '80px' : '60px',
+              borderRadius: '50%',
+              border: `4px solid ${isNearTarget ? '#22c55e' : '#ec4899'}`,
+              background: isNearTarget ? 'rgba(34, 197, 94, 0.2)' : 'rgba(236, 72, 153, 0.1)',
+              transition: 'all 0.3s ease',
+              boxShadow: isNearTarget
+                ? '0 0 60px rgba(34, 197, 94, 0.6), 0 0 120px rgba(34, 197, 94, 0.3)'
+                : '0 0 40px rgba(236, 72, 153, 0.4), 0 0 80px rgba(236, 72, 153, 0.2)',
+            }}
+          >
+            {/* Pulsing inner dot */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: '20px',
+                borderRadius: '50%',
+                background: isNearTarget ? '#22c55e' : '#ec4899',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Position label near target */}
+        {CALIBRATION_TARGETS[currentTargetIndex] && (
+          <div
+            style={{
+              position: 'absolute',
+              left: `${CALIBRATION_TARGETS[currentTargetIndex].x * 100}%`,
+              top: `${CALIBRATION_TARGETS[currentTargetIndex].y * 100}%`,
+              transform: 'translate(-50%, 60px)',
+              color: isNearTarget ? '#22c55e' : '#ec4899',
+              fontSize: '18px',
+              fontWeight: 600,
+              textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+            }}
+          >
+            {CALIBRATION_TARGETS[currentTargetIndex].label}
+          </div>
+        )}
+      </div>
+
+      {/* Title */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '40px',
+          color: '#fff',
+          fontSize: '28px',
+          fontWeight: 700,
+          letterSpacing: '2px',
+        }}
+      >
+        CALIBRATING RIGHT HAND
+      </div>
+
+      {/* Instructions */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '90px',
+          color: 'rgba(255,255,255,0.7)',
+          fontSize: '16px',
+        }}
+      >
+        Move your right hand to follow the target
+      </div>
+
+      {/* Feedback */}
+      <div
+        style={{
+          marginTop: '30px',
+          color: isNearTarget ? '#22c55e' : '#ec4899',
+          fontSize: '24px',
+          fontWeight: 600,
+          height: '36px',
+        }}
+      >
+        {isNearTarget ? '✓ Good! Hold it...' : 'Move to the target'}
+      </div>
+
+      {/* Progress bar */}
+      <div
+        style={{
+          width: '400px',
+          maxWidth: '80vw',
+          marginTop: '20px',
+        }}
+      >
+        <div
+          style={{
+            width: '100%',
+            height: '8px',
+            background: 'rgba(255,255,255,0.1)',
+            borderRadius: '4px',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              width: `${calibrationProgress}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, #ec4899, #22c55e)',
+              transition: 'width 0.1s',
+            }}
+          />
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            marginTop: '8px',
+            color: 'rgba(255,255,255,0.5)',
+            fontSize: '14px',
+          }}
+        >
+          <span>Target {currentTargetIndex + 1} of {CALIBRATION_TARGETS.length}</span>
+          <span>{Math.round(calibrationProgress)}%</span>
+        </div>
+      </div>
+
+      {/* Skip hint */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: '30px',
+          color: 'rgba(255,255,255,0.3)',
+          fontSize: '12px',
+        }}
+      >
+        Press R to restart calibration
+      </div>
+    </div>
+  );
 }

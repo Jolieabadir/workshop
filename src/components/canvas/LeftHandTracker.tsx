@@ -4,8 +4,8 @@
 // HAND TRACKING - LEFT HAND (Camera Navigation)
 // With calibration - adapts to YOUR hand's range of motion
 //   - Open hand: orbit camera (joystick style, calibrated to your range)
-//   - Pinch: zoom in
-//   - L-shape: zoom out
+//   - Pinch: zoom out
+//   - L-shape: zoom in
 // Press 'C' to recalibrate
 // =============================================================================
 
@@ -304,8 +304,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
 
     // Normal operation with calibrated range
     if (gesture === 'pinch') {
-      const yFactor = 1.0 + (0.5 - palmCenter.y);
-      const zoomDelta = ZOOM_SENSITIVITY * Math.max(0.3, yFactor);
+      const zoomDelta = -ZOOM_SENSITIVITY;
 
       setCameraControl({
         azimuthDelta: 0,
@@ -314,7 +313,8 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
         isActive: true,
       });
     } else if (gesture === 'open_palm') {
-      const zoomDelta = -ZOOM_SENSITIVITY;
+      const yFactor = 1.0 + (0.5 - palmCenter.y);
+      const zoomDelta = ZOOM_SENSITIVITY * Math.max(0.3, yFactor);
 
       setCameraControl({
         azimuthDelta: 0,
