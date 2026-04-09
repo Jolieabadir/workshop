@@ -37,63 +37,92 @@ export interface ComponentGeneratorProps {
   scale?: number;
 }
 
+// Scale multiplier to make mm-based components visible in scene
+// Generators use real mm dimensions (40mm = 0.4 units), but scene uses ~1 unit = 1m visual scale
+const COMPONENT_SCALE = 10;
+
 /**
  * ComponentGenerator - Renders the appropriate 3D component
  * based on componentType and params.
  *
  * Supports both electronic components (resistor, capacitor, etc.)
  * and mechanical primitives (plate, shaft, link, joint, etc.)
+ *
+ * All components are wrapped in a 10x scale group so they're visible
+ * alongside regular nodes (which are ~1.2 units wide).
  */
 export function ComponentGenerator({ componentType, params = {}, scale = 1 }: ComponentGeneratorProps) {
+  let component: React.ReactNode;
+
   switch (componentType) {
     // Electronic components
     case 'resistor':
-      return <Resistor params={params as ResistorParams} scale={scale} />;
+      component = <Resistor params={params as ResistorParams} scale={scale} />;
+      break;
 
     case 'capacitor':
-      return <Capacitor params={params as CapacitorParams} scale={scale} />;
+      component = <Capacitor params={params as CapacitorParams} scale={scale} />;
+      break;
 
     case 'ic':
-      return <IC params={params as ICParams} scale={scale} />;
+      component = <IC params={params as ICParams} scale={scale} />;
+      break;
 
     case 'led':
-      return <LED params={params as LEDParams} scale={scale} />;
+      component = <LED params={params as LEDParams} scale={scale} />;
+      break;
 
     case 'connector':
-      return <Connector params={params as ConnectorParams} scale={scale} />;
+      component = <Connector params={params as ConnectorParams} scale={scale} />;
+      break;
 
     // Mechanical primitives
     case 'plate':
-      return <Plate params={params as PlateParams} scale={scale} />;
+      component = <Plate params={params as PlateParams} scale={scale} />;
+      break;
 
     case 'shaft':
-      return <Shaft params={params as ShaftParams} scale={scale} />;
+      component = <Shaft params={params as ShaftParams} scale={scale} />;
+      break;
 
     case 'bearing':
-      return <Bearing params={params as BearingParams} scale={scale} />;
+      component = <Bearing params={params as BearingParams} scale={scale} />;
+      break;
 
     case 'bracket':
-      return <Bracket params={params as BracketParams} scale={scale} />;
+      component = <Bracket params={params as BracketParams} scale={scale} />;
+      break;
 
     case 'link':
-      return <Link params={params as LinkParams} scale={scale} />;
+      component = <Link params={params as LinkParams} scale={scale} />;
+      break;
 
     case 'joint':
-      return <Joint params={params as JointParams} scale={scale} />;
+      component = <Joint params={params as JointParams} scale={scale} />;
+      break;
 
     case 'housing':
-      return <Housing params={params as HousingParams} scale={scale} />;
+      component = <Housing params={params as HousingParams} scale={scale} />;
+      break;
 
     case 'gear':
-      return <Gear params={params as GearParams} scale={scale} />;
+      component = <Gear params={params as GearParams} scale={scale} />;
+      break;
 
     default:
       // Fallback: render a simple box placeholder
-      return (
+      component = (
         <mesh>
           <boxGeometry args={[0.3, 0.3, 0.3]} />
           <meshStandardMaterial color="#888888" />
         </mesh>
       );
   }
+
+  // Wrap in 10x scale group so components are visible in scene
+  return (
+    <group scale={[COMPONENT_SCALE, COMPONENT_SCALE, COMPONENT_SCALE]}>
+      {component}
+    </group>
+  );
 }
