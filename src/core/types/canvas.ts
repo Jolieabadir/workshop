@@ -23,8 +23,23 @@ export interface Vec3 {
   z: number;
 }
 
-/** Type of electronic component */
-export type ComponentType = 'resistor' | 'capacitor' | 'ic' | 'led' | 'connector';
+/** Type of component (electronic or mechanical) */
+export type ComponentType =
+  // Electronic components
+  | 'resistor'
+  | 'capacitor'
+  | 'ic'
+  | 'led'
+  | 'connector'
+  // Mechanical primitives
+  | 'plate'
+  | 'shaft'
+  | 'bearing'
+  | 'bracket'
+  | 'link'
+  | 'joint'
+  | 'housing'
+  | 'gear';
 
 /** Connector point on an electronic component (where wires attach) */
 export interface ComponentConnectorPoint {
@@ -33,7 +48,7 @@ export interface ComponentConnectorPoint {
   direction: Vec3;
 }
 
-/** Data for an electronic component node */
+/** Data for a component node (electronic or mechanical) */
 export interface ComponentData {
   componentType: ComponentType;
   params: Record<string, unknown>;

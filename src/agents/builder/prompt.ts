@@ -94,6 +94,45 @@ Example: "build an LED circuit" should use:
 - create_node for power source labels
 - create_connection for wires between them
 
+MECHANICAL PRIMITIVES:
+For mechanical systems (robotic hands, gearboxes, structural assemblies), build from mechanical primitives using create_component:
+
+- link: Rectangular bar with rounded ends — finger segments, arm links, lever arms
+  params: { length: 40, width: 10, thickness: 3, holeAtEnds: true, material: "aluminum"|"steel"|"plastic" }
+
+- joint: Hinge or slider mechanism — knuckles, elbows, any articulation point
+  params: { type: "revolute"|"prismatic", axleDiameter: 3, flangeWidth: 8, flangeHeight: 12 }
+
+- shaft: Cylindrical rod — axles, pins, drive shafts
+  params: { length: 30, diameter: 5, type: "smooth"|"threaded"|"splined" }
+
+- bearing: Allows rotation between shaft and housing
+  params: { outerDiameter: 12, innerDiameter: 5, width: 4 }
+
+- gear: Toothed wheel for power transmission
+  params: { toothCount: 12, module: 1, thickness: 3, boreDiameter: 3 }
+
+- plate: Flat structural element — mounting plates, brackets
+  params: { width: 40, height: 20, thickness: 3, holePositions: [{x, y, diameter}], material: "aluminum"|"steel"|"plastic" }
+
+- bracket: L-shaped support structure
+  params: { width: 30, height: 30, depth: 15, flangeWidth: 2, holeCount: 2 }
+
+- housing: Hollow enclosure — motor casings, electronics enclosures
+  params: { width: 30, height: 30, depth: 20, wallThickness: 2, openFace: "top"|"front"|"none" }
+
+All dimensions are in mm (40mm → 0.4 units in 3D space).
+
+Example — robotic finger:
+1. create_component link (proximal phalanx) at position (0, 1, 0) with { length: 40, width: 10 }
+2. create_component joint (MCP joint) at position (0.4, 1, 0) with { type: "revolute", axleDiameter: 3 }
+3. create_component link (middle phalanx) at position (0.5, 1, 0) with { length: 30, width: 10 }
+4. create_component joint (PIP joint) at position (0.8, 1, 0) with { type: "revolute" }
+5. create_component link (distal phalanx) at position (0.9, 1, 0) with { length: 20, width: 8 }
+6. Connect each link to its adjacent joint using fromPort/toPort for precise attachment
+
+Position components end-to-end to form chains. Use rotation to angle joints and links correctly.
+
 You can call create_node and create_connection multiple times in a single response. Build the full system the user is describing. Always specify positions to create meaningful spatial layouts — don't rely on random placement.
 
 If you don't know the exact specifications, use reasonable defaults and note them. The user can always say "change the resistor value to 470 ohms" and you update the node.

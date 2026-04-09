@@ -44,22 +44,22 @@ export const BUILDER_TOOLS: Tool[] = [
   },
   {
     name: 'create_component',
-    description: 'Create a realistic 3D electronic component on the canvas. Use this instead of create_node when building circuits or hardware systems.',
+    description: 'Create a realistic 3D component on the canvas. Use for electronic components (circuits) or mechanical primitives (robotic hands, gearboxes, structural assemblies).',
     input_schema: {
       type: 'object' as const,
       properties: {
         componentType: {
           type: 'string',
-          enum: ['resistor', 'capacitor', 'ic', 'led', 'connector'],
-          description: 'The type of electronic component to create.',
+          enum: ['resistor', 'capacitor', 'ic', 'led', 'connector', 'plate', 'shaft', 'bearing', 'bracket', 'link', 'joint', 'housing', 'gear'],
+          description: 'Component type. Electronic: resistor, capacitor, ic, led, connector. Mechanical: link (bar with rounded ends for limbs), joint (hinge/slider), shaft (axle), bearing (rotation), gear (power transmission), plate (flat structure), bracket (L-support), housing (enclosure).',
         },
         params: {
           type: 'object',
-          description: 'Component-specific parameters. Resistor: { value: "470Ω", colorBands: ["yellow","violet","brown"] }. Capacitor: { value: "100μF", type: "electrolytic" }. IC: { pinCount: 8, label: "LM7805" }. LED: { color: "#ff0000" }. Connector: { pinCount: 8, rows: 2 }.',
+          description: 'Component-specific parameters. Electronic: Resistor { colorBands }, Capacitor { type }, IC { pinCount, label }, LED { color }, Connector { pinCount, rows }. Mechanical: Link { length, width, thickness }, Joint { type: "revolute"|"prismatic", axleDiameter }, Shaft { length, diameter, type: "smooth"|"threaded"|"splined" }, Bearing { outerDiameter, innerDiameter, width }, Gear { toothCount, module, thickness, boreDiameter }, Plate { width, height, thickness, material }, Bracket { width, height, depth }, Housing { width, height, depth, wallThickness, openFace }. Dimensions in mm.',
         },
         title: {
           type: 'string',
-          description: 'Label for the component, e.g. "100μF Filter Cap"',
+          description: 'Label for the component, e.g. "MCP Joint" or "Proximal Phalanx"',
         },
         position: {
           type: 'object',
@@ -77,7 +77,7 @@ export const BUILDER_TOOLS: Tool[] = [
             y: { type: 'number' },
             z: { type: 'number' },
           },
-          description: 'Rotation in radians. Use to orient components correctly in the circuit layout.',
+          description: 'Rotation in radians. Use to orient components correctly in assemblies.',
         },
       },
       required: ['componentType', 'title'],
