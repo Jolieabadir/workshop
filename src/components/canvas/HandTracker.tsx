@@ -1,13 +1,16 @@
 'use client';
 
 // =============================================================================
-// HAND MIRRORING NOTE:
-// The webcam video is displayed mirrored (CSS scaleX(-1)) but MediaPipe landmarks
-// are in un-mirrored coordinate space. This means:
-//   - Handedness labels are swapped: MediaPipe "Left" = user's physical RIGHT hand
-//   - X coordinates are inverted: we flip them here (1.0 - x) so screenPosition
-//     matches the mirrored video display and 3D cursor moves in the expected direction
-// Drawing code does NOT flip coordinates because the canvas also has scaleX(-1).
+// HAND TRACKING - RIGHT HAND (Object Interaction)
+// This tracker captures the user's RIGHT hand for pinch/grab and resize gestures.
+//
+// MIRROR NOTE: Webcam is CSS-mirrored (scaleX(-1)) for natural "mirror" display.
+// MediaPipe detects handedness based on anatomical features (thumb position), NOT
+// screen position. So MediaPipe labels match the user's physical hands:
+//   MediaPipe "Right" = user's RIGHT hand (this tracker)
+//   MediaPipe "Left"  = user's LEFT hand (LeftHandTracker)
+//
+// X coordinates are flipped (1.0 - x) so cursor movement matches mirrored display.
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react';
@@ -210,9 +213,8 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     if (results.landmarks && results.handedness) {
       for (let i = 0; i < results.landmarks.length; i++) {
         const handedness = results.handedness[i];
-        // MediaPipe reports handedness from camera's perspective
-        // So "Left" from camera = user's right hand (since video is mirrored)
-        const isRightHand = handedness?.[0]?.categoryName === 'Left';
+        // MediaPipe "Right" = user's physical right hand (based on anatomy, not screen position)
+        const isRightHand = handedness?.[0]?.categoryName === 'Right';
 
         if (isRightHand) {
           const landmarks = results.landmarks[i];
