@@ -4,7 +4,7 @@ import { Html, RoundedBox } from '@react-three/drei';
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { CanvasNode, NodeType } from '@/types/canvas';
+import type { CanvasNode, NodeType } from '@/core/types';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
 

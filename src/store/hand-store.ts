@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Vec3, HandGesture, TwoHandState, SingleHandState } from '@/types/canvas';
+import type { Vec3, HandGesture, TwoHandState, SingleHandState } from '@/core/types';
 
 const initialSingleHand: SingleHandState = {
   isDetected: false,

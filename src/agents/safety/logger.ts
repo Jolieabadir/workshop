@@ -5,7 +5,7 @@
  * Pure function implementation — no LLM calls.
  */
 
-import type { BuilderAction, CanvasState, SafetyLogEntry } from '@/types/canvas';
+import type { BuilderAction, CanvasState, SafetyLogEntry } from '@/core/types';
 import { useSafetyStore } from '@/store/safety-store';
 
 /**

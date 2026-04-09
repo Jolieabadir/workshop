@@ -10,7 +10,7 @@
  */
 
 import { create } from 'zustand';
-import type { Vec3, HandGesture, InputState, UnifiedIntent } from '@/types/canvas';
+import type { Vec3, HandGesture, InputState, UnifiedIntent } from '@/core/types';
 
 const MAX_INTENT_HISTORY = 20;
 const MAX_PENDING_INTENTS = 10;

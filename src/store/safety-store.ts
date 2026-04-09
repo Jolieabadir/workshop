@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand';
-import type { SafetyLogEntry } from '@/types/canvas';
+import type { SafetyLogEntry } from '@/core/types';
 
 const MAX_LOG_ENTRIES = 100;
 

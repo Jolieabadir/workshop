@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
-import type { OwlAnalysisResult } from '@/lib/agents/owl';
+import type { OwlAnalysisResult } from '@/agents/owl/analyzer';
 
 const OWL_DEBOUNCE_MS = 2000; // Wait 2 seconds after last change before analyzing
 const OWL_COOLDOWN_MS = 10000; // Minimum 10 seconds between analyses

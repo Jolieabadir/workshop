@@ -10,8 +10,8 @@ import { useOwlAnalysis } from '@/hooks/useOwlAnalysis';
 import { DeepgramClient } from '@/lib/deepgram';
 import { getTTSPlayer } from '@/lib/tts-player';
 import { processHandInput } from '@/lib/input-manager';
-import { logBuilderActions, getActionSummary, getActionIcon, formatLogTime } from '@/lib/agents/safety-log';
-import type { BuilderAction, CanvasState, UnifiedIntent } from '@/types/canvas';
+import { logBuilderActions, getActionSummary, getActionIcon, formatLogTime } from '@/agents/safety/logger';
+import type { BuilderAction, CanvasState, UnifiedIntent } from '@/core/types';
 
 const Workshop3DCanvas = dynamic(
   () => import('@/components/canvas/Workshop3DCanvas').then((m) => m.Workshop3DCanvas),

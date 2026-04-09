@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape, Badge } from '@/types/canvas';
+import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape, Badge } from '@/core/types';
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);

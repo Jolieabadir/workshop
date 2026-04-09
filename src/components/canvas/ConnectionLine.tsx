@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { Line, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import type { CanvasConnection } from '@/types/canvas';
+import type { CanvasConnection } from '@/core/types';
 import { useCanvasStore } from '@/store/canvas-store';
 
 interface ConnectionLineProps {

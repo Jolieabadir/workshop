@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { OWL_SYSTEM_PROMPT, OWL_TOOLS } from '@/lib/agents/owl';
-import type { OwlAnalysisResult, OwlBadge, OwlConnectionSuggestion } from '@/lib/agents/owl';
-import type { CanvasState } from '@/types/canvas';
+import { OWL_SYSTEM_PROMPT } from '@/agents/owl/prompt';
+import { OWL_TOOLS } from '@/agents/owl/tools';
+import type { OwlAnalysisResult, OwlBadge, OwlConnectionSuggestion } from '@/agents/owl/analyzer';
+import type { CanvasState } from '@/core/types';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
