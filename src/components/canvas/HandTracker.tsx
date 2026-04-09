@@ -195,9 +195,9 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     const smoothed = smoothLandmarks(landmarks, smoothedLandmarksRef.current);
     smoothedLandmarksRef.current = smoothed;
 
-    // Get index finger tip for cursor position
+    // Get index finger tip for cursor position (raw coordinates, no flip)
     const indexTip = smoothed[INDEX_TIP];
-    const currentX = 1.0 - indexTip.x; // flip for mirror
+    const currentX = indexTip.x;
     const currentY = indexTip.y;
 
     // Detect gesture
@@ -254,10 +254,11 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       );
       setCurrentTargetIndex(targetIndex);
 
-      // Check if user's hand is near the current target
+      // Check if user's hand is near the current target (use mirrored X for display alignment)
       const target = CALIBRATION_TARGETS[targetIndex];
+      const mirroredX = 1.0 - currentX;
       const distToTarget = Math.sqrt(
-        Math.pow(currentX - target.x, 2) + Math.pow(currentY - target.y, 2)
+        Math.pow(mirroredX - target.x, 2) + Math.pow(currentY - target.y, 2)
       );
       setIsNearTarget(distToTarget < 0.15);
 
