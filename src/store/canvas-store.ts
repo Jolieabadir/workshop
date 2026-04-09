@@ -126,7 +126,7 @@ interface CanvasStore extends CanvasState {
   removeNode: (id: string) => void;
   updateNode: (id: string, changes: Partial<CanvasNode>) => void;
   moveNode: (id: string, position: Vec3) => void;
-  addConnection: (fromId: string, toId: string, label?: string) => string;
+  addConnection: (fromId: string, toId: string, label?: string, fromPort?: string, toPort?: string) => string;
   removeConnection: (id: string) => void;
   addGroup: (nodeIds: string[], label: string) => string;
 
@@ -266,10 +266,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     get().setBuilderTarget(position);
   },
 
-  addConnection: (fromId, toId, label) => {
+  addConnection: (fromId, toId, label, fromPort, toPort) => {
     const id = uid();
     set((s) => ({
-      connections: { ...s.connections, [id]: { id, fromId, toId, label } },
+      connections: { ...s.connections, [id]: { id, fromId, toId, fromPort, toPort, label } },
     }));
     return id;
   },
@@ -387,7 +387,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         );
         break;
       case 'create_connection':
-        store.addConnection(action.fromId, action.toId, action.label);
+        store.addConnection(action.fromId, action.toId, action.label, action.fromPort, action.toPort);
         break;
       case 'group_nodes':
         store.addGroup(action.nodeIds, action.label);

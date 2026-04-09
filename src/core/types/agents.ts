@@ -8,7 +8,7 @@ import type { CanvasNode, NodeType, NodeShape, Vec3, ComponentType } from './can
 export type BuilderAction =
   | { type: 'create_node'; nodeType: NodeType; shape: NodeShape; content: string; title?: string; position?: Vec3; connectedToId?: string }
   | { type: 'create_component'; componentType: ComponentType; params: Record<string, unknown>; title: string; position?: Vec3; rotation?: Vec3 }
-  | { type: 'create_connection'; fromId: string; toId: string; label?: string }
+  | { type: 'create_connection'; fromId: string; toId: string; fromPort?: string; toPort?: string; label?: string }
   | { type: 'group_nodes'; nodeIds: string[]; label: string }
   | { type: 'move_node'; nodeId: string; position: Vec3 }
   | { type: 'update_node'; nodeId: string; changes: Partial<CanvasNode> }

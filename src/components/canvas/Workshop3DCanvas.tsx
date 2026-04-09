@@ -90,7 +90,7 @@ function SceneContent() {
   return (
     <>
       {/* Environment */}
-      <ambientLight intensity={0.4} />
+      <ambientLight intensity={0.2} />
       <directionalLight position={[10, 10, 5]} intensity={0.8} />
       <Stars radius={100} depth={50} count={2000} factor={4} fade speed={1} />
       <Grid
@@ -98,10 +98,10 @@ function SceneContent() {
         args={[40, 40]}
         cellSize={1}
         cellThickness={0.5}
-        cellColor="#1a1a2e"
+        cellColor="#221e2a"
         sectionSize={4}
         sectionThickness={1}
-        sectionColor="#2a2a4e"
+        sectionColor="#2e2838"
         fadeDistance={30}
         infiniteGrid
       />
@@ -136,11 +136,11 @@ function SceneContent() {
 
 export function Workshop3DCanvas() {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0a0a1a' }}>
+    <div style={{ position: 'fixed', inset: 0, background: '#1a1820' }}>
       <Canvas
         camera={{ position: [0, 3, 8], fov: 60 }}
         gl={{ antialias: true, alpha: false }}
-        style={{ background: '#0a0a1a' }}
+        style={{ background: '#1a1820' }}
       >
         <SceneContent />
       </Canvas>

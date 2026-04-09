@@ -248,6 +248,8 @@ export function parseToolCallToAction(toolName: string, toolInput: Record<string
         type: 'create_connection',
         fromId: toolInput.fromId as string,
         toId: toolInput.toId as string,
+        fromPort: toolInput.fromPort as string | undefined,
+        toPort: toolInput.toPort as string | undefined,
         label: toolInput.label as string | undefined,
       };
 

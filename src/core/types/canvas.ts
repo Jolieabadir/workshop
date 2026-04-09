@@ -73,6 +73,10 @@ export interface CanvasConnection {
   id: string;
   fromId: string;
   toId: string;
+  /** Optional connector point ID on the source component */
+  fromPort?: string;
+  /** Optional connector point ID on the target component */
+  toPort?: string;
   label?: string;
   color?: string;
 }

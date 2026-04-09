@@ -85,7 +85,7 @@ export const BUILDER_TOOLS: Tool[] = [
   },
   {
     name: 'create_connection',
-    description: 'Create a connection/edge between two existing nodes to show a relationship.',
+    description: 'Create a connection/edge between two existing nodes to show a relationship. For electronic components, use fromPort/toPort to connect at specific connector points.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -96,6 +96,14 @@ export const BUILDER_TOOLS: Tool[] = [
         toId: {
           type: 'string',
           description: 'The ID of the target node.',
+        },
+        fromPort: {
+          type: 'string',
+          description: 'Optional connector point ID on the source component (e.g. "pin1", "anode"). Required for component wiring.',
+        },
+        toPort: {
+          type: 'string',
+          description: 'Optional connector point ID on the target component (e.g. "pin1", "cathode"). Required for component wiring.',
         },
         label: {
           type: 'string',
