@@ -2,15 +2,11 @@
 
 // =============================================================================
 // HAND TRACKING - LEFT HAND (Camera Navigation)
-// This tracker captures the user's LEFT hand for camera orbit/zoom/reset.
-//
-// MIRROR NOTE: Webcam is CSS-mirrored (scaleX(-1)) for natural "mirror" display.
-// MediaPipe detects handedness based on anatomical features (thumb position), NOT
-// screen position. So MediaPipe labels match the user's physical hands:
-//   MediaPipe "Left"  = user's LEFT hand (this tracker)
-//   MediaPipe "Right" = user's RIGHT hand (HandTracker)
-//
-// Camera orbit X-delta is negated to match the mirrored display direction.
+// With calibration - adapts to YOUR hand's range of motion
+//   - Open hand: orbit camera (joystick style, calibrated to your range)
+//   - Pinch: zoom in
+//   - L-shape: zoom out
+// Press 'C' to recalibrate
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react';
@@ -32,16 +28,35 @@ const RING_MCP = 13;
 const PINKY_MCP = 17;
 
 // Gesture thresholds
-const PINCH_THRESHOLD = 0.07;
-const OPEN_PALM_THRESHOLD = 0.12;
-const FIST_THRESHOLD = 0.08; // Fingers curled close to palm
+const PINCH_THRESHOLD = 0.08;
+const L_SHAPE_THUMB_SPREAD = 0.04;
+const L_SHAPE_CURL_RATIO = 0.85;
 
-// Smoothing factor for EMA (lower = smoother)
+// Smoothing factor for EMA
 const SMOOTHING_ALPHA = 0.25;
 
 // Camera control sensitivity
-const ORBIT_SENSITIVITY = 3.0;
-const ZOOM_SENSITIVITY = 15.0;
+const ZOOM_SENSITIVITY = 6.0;
+
+// Calibration settings
+const CALIBRATION_DURATION = 18000; // 18 seconds
+const MIN_CALIBRATION_SAMPLES = 200;
+
+// Calibration target positions (normalized 0-1, will be shown on canvas)
+// Pattern: center → corners → edges → center
+const CALIBRATION_TARGETS = [
+  { x: 0.5, y: 0.5, label: 'Center' },
+  { x: 0.2, y: 0.2, label: 'Top-Left' },
+  { x: 0.8, y: 0.2, label: 'Top-Right' },
+  { x: 0.8, y: 0.8, label: 'Bottom-Right' },
+  { x: 0.2, y: 0.8, label: 'Bottom-Left' },
+  { x: 0.5, y: 0.2, label: 'Top' },
+  { x: 0.8, y: 0.5, label: 'Right' },
+  { x: 0.5, y: 0.8, label: 'Bottom' },
+  { x: 0.2, y: 0.5, label: 'Left' },
+  { x: 0.5, y: 0.5, label: 'Center' },
+];
+const TARGET_DURATION = CALIBRATION_DURATION / CALIBRATION_TARGETS.length;
 
 interface LeftHandTrackerProps {
   enabled?: boolean;
@@ -50,6 +65,7 @@ interface LeftHandTrackerProps {
 export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
   const { videoRef, isReady } = useSharedWebcam();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const calibrationCanvasRef = useRef<HTMLCanvasElement>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const animationFrameRef = useRef<number>(0);
   const lastVideoTimeRef = useRef<number>(-1);
@@ -57,16 +73,53 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
   // Smoothed landmarks
   const smoothedLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
 
-  // For fist → reset camera, track previous gesture
-  const prevGestureRef = useRef<HandGesture>('none');
+  // Calibration state
+  const calibrationRef = useRef<{
+    isCalibrating: boolean;
+    startTime: number;
+    minX: number; maxX: number;
+    minY: number; maxY: number;
+    samples: number;
+  } | null>(null);
+
+  const calibratedRangeRef = useRef<{
+    minX: number; maxX: number;
+    minY: number; maxY: number;
+    centerX: number; centerY: number;
+  } | null>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [currentTargetIndex, setCurrentTargetIndex] = useState(0);
+  const [isNearTarget, setIsNearTarget] = useState(false);
 
   // Hand store actions
   const setLeftHand = useHandStore((s) => s.setLeftHand);
   const setLeftHandDetected = useHandStore((s) => s.setLeftHandDetected);
   const setCameraControl = useHandStore((s) => s.setCameraControl);
+
+  // Reset calibration (can be triggered by pressing 'C')
+  const resetCalibration = useCallback(() => {
+    calibratedRangeRef.current = null;
+    calibrationRef.current = null;
+    setIsCalibrating(false);
+    setCalibrationProgress(0);
+    setCurrentTargetIndex(0);
+    setIsNearTarget(false);
+  }, []);
+
+  // Keyboard listener for recalibration
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'c' || e.key === 'C') {
+        resetCalibration();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [resetCalibration]);
 
   // Calculate distance between two landmarks
   const landmarkDistance = useCallback((
@@ -83,45 +136,32 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
     );
   }, []);
 
-  // Detect gesture from hand landmarks (includes fist detection for left hand)
+  // Gesture detection
   const detectGesture = useCallback((
     landmarks: { x: number; y: number; z: number }[]
   ): HandGesture => {
     const pinchDist = landmarkDistance(landmarks, THUMB_TIP, INDEX_TIP);
-
     if (pinchDist < PINCH_THRESHOLD) {
       return 'pinch';
     }
 
-    // Check for fist (all fingertips close to MCP joints / palm)
-    const indexCurled = landmarkDistance(landmarks, INDEX_TIP, INDEX_MCP) < FIST_THRESHOLD;
-    const middleCurled = landmarkDistance(landmarks, MIDDLE_TIP, MIDDLE_MCP) < FIST_THRESHOLD;
-    const ringCurled = landmarkDistance(landmarks, RING_TIP, RING_MCP) < FIST_THRESHOLD;
-    const pinkyCurled = landmarkDistance(landmarks, PINKY_TIP, PINKY_MCP) < FIST_THRESHOLD;
+    const thumbTip = landmarks[THUMB_TIP];
+    const indexMcp = landmarks[INDEX_MCP];
+    const thumbSpread = Math.abs(thumbTip.x - indexMcp.x);
+    const thumbOut = thumbSpread > L_SHAPE_THUMB_SPREAD;
 
-    // Fist requires all fingers curled
-    if (indexCurled && middleCurled && ringCurled && pinkyCurled) {
-      return 'fist';
-    }
+    const indexDist = landmarkDistance(landmarks, INDEX_TIP, INDEX_MCP);
+    const middleDist = landmarkDistance(landmarks, MIDDLE_TIP, MIDDLE_MCP);
+    const ringDist = landmarkDistance(landmarks, RING_TIP, RING_MCP);
+    const pinkyDist = landmarkDistance(landmarks, PINKY_TIP, PINKY_MCP);
 
-    // Check for open palm (fingers spread)
-    const thumbIndex = landmarkDistance(landmarks, THUMB_TIP, INDEX_TIP);
-    const indexMiddle = landmarkDistance(landmarks, INDEX_TIP, MIDDLE_TIP);
-    const middleRing = landmarkDistance(landmarks, MIDDLE_TIP, RING_TIP);
-    const ringPinky = landmarkDistance(landmarks, RING_TIP, PINKY_TIP);
+    const indexExtended = indexDist > 0.06;
+    const middleRelCurled = middleDist < indexDist * L_SHAPE_CURL_RATIO;
+    const ringRelCurled = ringDist < indexDist * L_SHAPE_CURL_RATIO;
+    const pinkyRelCurled = pinkyDist < indexDist * L_SHAPE_CURL_RATIO;
 
-    const avgFingerSpread = (thumbIndex + indexMiddle + middleRing + ringPinky) / 4;
-    if (avgFingerSpread > OPEN_PALM_THRESHOLD) {
+    if (thumbOut && indexExtended && middleRelCurled && ringRelCurled && pinkyRelCurled) {
       return 'open_palm';
-    }
-
-    // Check for pointing (index extended, others curled)
-    const indexExtended = landmarks[INDEX_TIP].y < landmarks[WRIST].y;
-    const middleCurledY = landmarks[MIDDLE_TIP].y > landmarks[INDEX_TIP].y + 0.05;
-    const ringCurledY = landmarks[RING_TIP].y > landmarks[INDEX_TIP].y + 0.05;
-
-    if (indexExtended && middleCurledY && ringCurledY) {
-      return 'point';
     }
 
     return 'none';
@@ -135,7 +175,6 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
     if (!prevSmoothed) {
       return newLandmarks.map(lm => ({ ...lm }));
     }
-
     return newLandmarks.map((lm, i) => {
       const prev = prevSmoothed[i];
       return {
@@ -146,11 +185,10 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
     });
   }, []);
 
-  // Calculate palm center from landmarks
+  // Calculate palm center
   const getPalmCenter = useCallback((
     landmarks: { x: number; y: number; z: number }[]
   ): { x: number; y: number } => {
-    // Use wrist and MCP joints to estimate palm center
     const palmLandmarks = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP];
     let sumX = 0, sumY = 0;
     for (const idx of palmLandmarks) {
@@ -163,21 +201,19 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
     };
   }, []);
 
-  // Process detected left hand and map to camera controls
+  // Process detected left hand
   const processLeftHand = useCallback((
     landmarks: { x: number; y: number; z: number }[]
   ) => {
-    // Smooth the landmarks
     const smoothed = smoothLandmarks(landmarks, smoothedLandmarksRef.current);
     smoothedLandmarksRef.current = smoothed;
 
-    // Detect gesture
     const gesture = detectGesture(smoothed);
-
-    // Get palm center for position tracking
     const palmCenter = getPalmCenter(smoothed);
+    const finger = smoothed[INDEX_TIP];
+    const currentX = 1.0 - finger.x; // flip for mirror
+    const currentY = finger.y;
 
-    // Update hand store
     setLeftHand({
       isDetected: true,
       screenPosition: palmCenter,
@@ -185,35 +221,91 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
       palmCenter,
     });
 
-    // Map gestures to camera controls
-    if (gesture === 'open_palm') {
-      // Open palm → camera orbit
-      // Map palm position relative to center of frame (0.5, 0.5)
-      // Palm left of center (x < 0.5) = rotate camera left (negative azimuth)
-      // Palm above center (y < 0.5) = rotate camera up (negative polar)
-      const centerX = 0.5;
-      const centerY = 0.5;
+    // Handle calibration
+    if (!calibratedRangeRef.current) {
+      const now = Date.now();
 
-      // Calculate delta from center, invert X because video is mirrored
-      const deltaX = -(palmCenter.x - centerX) * ORBIT_SENSITIVITY;
-      const deltaY = (palmCenter.y - centerY) * ORBIT_SENSITIVITY;
+      // Start calibration if not already running
+      if (!calibrationRef.current) {
+        calibrationRef.current = {
+          isCalibrating: true,
+          startTime: now,
+          minX: currentX,
+          maxX: currentX,
+          minY: currentY,
+          maxY: currentY,
+          samples: 1,
+        };
+        setIsCalibrating(true);
+        setCurrentTargetIndex(0);
+        return;
+      }
 
-      setCameraControl({
-        azimuthDelta: deltaX,
-        polarDelta: deltaY,
-        zoomDelta: 0,
-        isActive: true,
-      });
-    } else if (gesture === 'pinch') {
-      // Pinch → zoom
-      // Map pinch distance to zoom delta
-      // We use the distance between thumb and index
-      const pinchDist = landmarkDistance(smoothed, THUMB_TIP, INDEX_TIP);
-      // Normalize: closer pinch = zoom in (positive), spread = zoom out (negative)
-      // At threshold (0.07) = fully pinched = max zoom in
-      // At spread (0.2+) = max zoom out
-      const normalizedPinch = Math.max(0, Math.min(1, (0.15 - pinchDist) / 0.15));
-      const zoomDelta = (normalizedPinch - 0.5) * ZOOM_SENSITIVITY;
+      // Update calibration bounds
+      const cal = calibrationRef.current;
+      cal.minX = Math.min(cal.minX, currentX);
+      cal.maxX = Math.max(cal.maxX, currentX);
+      cal.minY = Math.min(cal.minY, currentY);
+      cal.maxY = Math.max(cal.maxY, currentY);
+      cal.samples++;
+
+      // Update progress and current target
+      const elapsed = now - cal.startTime;
+      const progress = Math.min(100, (elapsed / CALIBRATION_DURATION) * 100);
+      setCalibrationProgress(progress);
+
+      // Calculate which target we're on
+      const targetIndex = Math.min(
+        Math.floor(elapsed / TARGET_DURATION),
+        CALIBRATION_TARGETS.length - 1
+      );
+      setCurrentTargetIndex(targetIndex);
+
+      // Check if user's hand is near the current target
+      const target = CALIBRATION_TARGETS[targetIndex];
+      const distToTarget = Math.sqrt(
+        Math.pow(currentX - target.x, 2) + Math.pow(currentY - target.y, 2)
+      );
+      setIsNearTarget(distToTarget < 0.15);
+
+      // Check if calibration is complete
+      if (elapsed >= CALIBRATION_DURATION && cal.samples >= MIN_CALIBRATION_SAMPLES) {
+        const rangeX = cal.maxX - cal.minX;
+        const rangeY = cal.maxY - cal.minY;
+
+        if (rangeX > 0.1 && rangeY > 0.1) {
+          calibratedRangeRef.current = {
+            minX: cal.minX,
+            maxX: cal.maxX,
+            minY: cal.minY,
+            maxY: cal.maxY,
+            centerX: (cal.minX + cal.maxX) / 2,
+            centerY: (cal.minY + cal.maxY) / 2,
+          };
+        } else {
+          calibratedRangeRef.current = {
+            minX: 0.2, maxX: 0.8,
+            minY: 0.2, maxY: 0.8,
+            centerX: 0.5, centerY: 0.5,
+          };
+        }
+
+        calibrationRef.current = null;
+        setIsCalibrating(false);
+        setCalibrationProgress(100);
+        setCurrentTargetIndex(0);
+        setIsNearTarget(false);
+      }
+
+      // During calibration, don't control camera
+      setCameraControl({ isActive: false });
+      return;
+    }
+
+    // Normal operation with calibrated range
+    if (gesture === 'pinch') {
+      const yFactor = 1.0 + (0.5 - palmCenter.y);
+      const zoomDelta = ZOOM_SENSITIVITY * Math.max(0.3, yFactor);
 
       setCameraControl({
         azimuthDelta: 0,
@@ -221,38 +313,53 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
         zoomDelta,
         isActive: true,
       });
-    } else if (gesture === 'fist' && prevGestureRef.current !== 'fist') {
-      // Fist → reset camera (only trigger once on transition to fist)
-      // We'll set a special reset flag by using extreme values that the
-      // HandControlledOrbitControls can detect and handle
-      // Actually, for simplicity, we just deactivate and let user manually reset
-      // Or we could emit a custom event. For now, just deactivate.
+    } else if (gesture === 'open_palm') {
+      const zoomDelta = -ZOOM_SENSITIVITY;
+
       setCameraControl({
         azimuthDelta: 0,
         polarDelta: 0,
-        zoomDelta: 0,
-        isActive: false,
+        zoomDelta,
+        isActive: true,
       });
     } else {
-      // No camera control gesture
+      // OPEN HAND → orbit using calibrated range
+      const range = calibratedRangeRef.current;
+      const halfRangeX = (range.maxX - range.minX) / 2;
+      const halfRangeY = (range.maxY - range.minY) / 2;
+
+      // Normalize to -1 to 1 based on calibrated range
+      const normalizedX = (currentX - range.centerX) / halfRangeX;
+      const normalizedY = (currentY - range.centerY) / halfRangeY;
+
+      // Clamp to -1 to 1
+      const clampedX = Math.max(-1, Math.min(1, normalizedX));
+      const clampedY = Math.max(-1, Math.min(1, normalizedY));
+
+      // Dead zone (15% of calibrated range)
+      const deadZone = 0.15;
+      const activeX = Math.abs(clampedX) > deadZone ? clampedX : 0;
+      const activeY = Math.abs(clampedY) > deadZone ? clampedY : 0;
+
       setCameraControl({
-        azimuthDelta: 0,
-        polarDelta: 0,
+        azimuthDelta: activeX * 3.0,
+        polarDelta: activeY * 2.5,
         zoomDelta: 0,
-        isActive: false,
+        isActive: true,
       });
     }
+  }, [smoothLandmarks, detectGesture, getPalmCenter, setLeftHand, setCameraControl]);
 
-    prevGestureRef.current = gesture;
-  }, [smoothLandmarks, detectGesture, getPalmCenter, setLeftHand, setCameraControl, landmarkDistance]);
-
-  // Draw hand landmarks (blue tint for left hand)
+  // Draw hand landmarks
   const drawHand = useCallback((
     ctx: CanvasRenderingContext2D,
     landmarks: { x: number; y: number; z: number }[],
     width: number,
-    height: number
+    height: number,
+    options?: { lineWidth?: number; pointSize?: number; mirror?: boolean }
   ) => {
+    const { lineWidth = 2, pointSize = 3, mirror = false } = options || {};
+
     const connections = [
       [0, 1], [1, 2], [2, 3], [3, 4],
       [0, 5], [5, 6], [6, 7], [7, 8],
@@ -262,70 +369,85 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
       [5, 9], [9, 13], [13, 17],
     ];
 
-    // Blue color for left hand (navigation)
+    const getX = (x: number) => mirror ? (1 - x) * width : x * width;
+
     ctx.strokeStyle = '#4a9eff';
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 0.9;
 
     for (const [i, j] of connections) {
       const p1 = landmarks[i];
       const p2 = landmarks[j];
       ctx.beginPath();
-      ctx.moveTo(p1.x * width, p1.y * height);
-      ctx.lineTo(p2.x * width, p2.y * height);
+      ctx.moveTo(getX(p1.x), p1.y * height);
+      ctx.lineTo(getX(p2.x), p2.y * height);
       ctx.stroke();
     }
 
-    // Draw points
     ctx.fillStyle = '#4a9eff';
     for (const lm of landmarks) {
       ctx.beginPath();
-      ctx.arc(lm.x * width, lm.y * height, 3, 0, Math.PI * 2);
+      ctx.arc(getX(lm.x), lm.y * height, pointSize, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Highlight palm center
-    const palmCenter = getPalmCenter(landmarks);
+    // Highlight index fingertip
+    const indexTip = landmarks[INDEX_TIP];
     ctx.beginPath();
-    ctx.arc(palmCenter.x * width, palmCenter.y * height, 10, 0, Math.PI * 2);
-    ctx.strokeStyle = '#00d4ff';
-    ctx.lineWidth = 2;
+    ctx.arc(getX(indexTip.x), indexTip.y * height, pointSize * 3, 0, Math.PI * 2);
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = lineWidth * 1.5;
     ctx.stroke();
 
     ctx.globalAlpha = 1;
-  }, [getPalmCenter]);
+  }, []);
 
-  // Process results from MediaPipe - filter for left hand only
+  // Process MediaPipe results
   const processResults = useCallback((results: HandLandmarkerResult) => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
+    const calibrationCanvas = calibrationCanvasRef.current;
+    const calibrationCtx = calibrationCanvas?.getContext('2d');
 
     if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Find left hand in results
+    // Clear calibration canvas if it exists
+    if (calibrationCanvas && calibrationCtx) {
+      calibrationCtx.clearRect(0, 0, calibrationCanvas.width, calibrationCanvas.height);
+    }
+
     if (results.landmarks && results.handedness) {
       for (let i = 0; i < results.landmarks.length; i++) {
         const handedness = results.handedness[i];
-        // MediaPipe "Left" = user's physical left hand (based on anatomy, not screen position)
         const isLeftHand = handedness?.[0]?.categoryName === 'Left';
 
         if (isLeftHand) {
           const landmarks = results.landmarks[i];
           processLeftHand(landmarks);
 
-          // Draw hand visualization
+          // Draw on small preview canvas
           drawHand(ctx, landmarks, canvas.width, canvas.height);
-          return; // Found left hand, stop searching
+
+          // Also draw on calibration canvas if calibrating
+          if (calibrationCanvas && calibrationCtx && isCalibrating) {
+            drawHand(
+              calibrationCtx,
+              landmarks,
+              calibrationCanvas.width,
+              calibrationCanvas.height,
+              { lineWidth: 4, pointSize: 8, mirror: true }
+            );
+          }
+          return;
         }
       }
     }
 
-    // No left hand detected
     setLeftHandDetected(false);
-    setCameraControl({ isActive: false });
     smoothedLandmarksRef.current = null;
-  }, [processLeftHand, drawHand, setLeftHandDetected, setCameraControl]);
+    setCameraControl({ isActive: false });
+  }, [processLeftHand, drawHand, setLeftHandDetected, setCameraControl, isCalibrating]);
 
   // Initialize MediaPipe
   useEffect(() => {
@@ -345,7 +467,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
             delegate: 'GPU',
           },
           runningMode: 'VIDEO',
-          numHands: 2, // Track both hands so we can filter for left
+          numHands: 2,
           minHandDetectionConfidence: 0.5,
           minHandPresenceConfidence: 0.5,
           minTrackingConfidence: 0.5,
@@ -369,7 +491,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
     };
   }, [enabled]);
 
-  // Detection loop - uses shared video element
+  // Detection loop
   useEffect(() => {
     if (!enabled || !isInitialized || !isReady) return;
 
@@ -398,7 +520,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
     };
   }, [enabled, isInitialized, isReady, videoRef, processResults, setLeftHandDetected, setCameraControl]);
 
-  // Sync canvas size with video
+  // Sync canvas size
   useEffect(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -415,13 +537,12 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
 
   if (!enabled) return null;
 
-  // Render visualization overlay (positioned next to right hand tracker)
   return (
     <div
       style={{
         position: 'fixed',
         bottom: '100px',
-        left: '200px', // Offset from right hand tracker
+        left: '200px',
         zIndex: 20,
         borderRadius: '12px',
         overflow: 'hidden',
@@ -430,7 +551,6 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
         background: '#0a0a1a',
       }}
     >
-      {/* Label */}
       <div
         style={{
           position: 'absolute',
@@ -447,7 +567,6 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
         Left (Nav)
       </div>
 
-      {/* Canvas overlay for hand visualization */}
       <canvas
         ref={canvasRef}
         style={{
@@ -458,7 +577,6 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
         }}
       />
 
-      {/* Status indicator */}
       <div
         style={{
           position: 'absolute',
@@ -470,6 +588,204 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
           background: error ? '#ef4444' : isInitialized && isReady ? '#4a9eff' : '#f59e0b',
         }}
       />
+
+      {/* Full-screen calibration overlay */}
+      {isCalibrating && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(10, 10, 26, 0.95)',
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {/* Large calibration area */}
+          <div
+            style={{
+              position: 'relative',
+              width: '80vw',
+              height: '70vh',
+              maxWidth: '1200px',
+              maxHeight: '800px',
+              border: '2px solid rgba(74, 158, 255, 0.3)',
+              borderRadius: '24px',
+              background: 'rgba(0, 0, 0, 0.4)',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Hand skeleton canvas */}
+            <canvas
+              ref={calibrationCanvasRef}
+              width={1200}
+              height={800}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+              }}
+            />
+            {/* Target indicator */}
+            {CALIBRATION_TARGETS[currentTargetIndex] && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${CALIBRATION_TARGETS[currentTargetIndex].x * 100}%`,
+                  top: `${CALIBRATION_TARGETS[currentTargetIndex].y * 100}%`,
+                  transform: 'translate(-50%, -50%)',
+                  width: isNearTarget ? '80px' : '60px',
+                  height: isNearTarget ? '80px' : '60px',
+                  borderRadius: '50%',
+                  border: `4px solid ${isNearTarget ? '#22c55e' : '#4a9eff'}`,
+                  background: isNearTarget ? 'rgba(34, 197, 94, 0.2)' : 'rgba(74, 158, 255, 0.1)',
+                  transition: 'all 0.3s ease',
+                  boxShadow: isNearTarget
+                    ? '0 0 60px rgba(34, 197, 94, 0.6), 0 0 120px rgba(34, 197, 94, 0.3)'
+                    : '0 0 40px rgba(74, 158, 255, 0.4), 0 0 80px rgba(74, 158, 255, 0.2)',
+                }}
+              >
+                {/* Pulsing inner dot */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: '20px',
+                    borderRadius: '50%',
+                    background: isNearTarget ? '#22c55e' : '#4a9eff',
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Position label near target */}
+            {CALIBRATION_TARGETS[currentTargetIndex] && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${CALIBRATION_TARGETS[currentTargetIndex].x * 100}%`,
+                  top: `${CALIBRATION_TARGETS[currentTargetIndex].y * 100}%`,
+                  transform: 'translate(-50%, 60px)',
+                  color: isNearTarget ? '#22c55e' : '#4a9eff',
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                }}
+              >
+                {CALIBRATION_TARGETS[currentTargetIndex].label}
+              </div>
+            )}
+          </div>
+
+          {/* Title */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '40px',
+              color: '#fff',
+              fontSize: '28px',
+              fontWeight: 700,
+              letterSpacing: '2px',
+            }}
+          >
+            CALIBRATING LEFT HAND
+          </div>
+
+          {/* Instructions */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '90px',
+              color: 'rgba(255,255,255,0.7)',
+              fontSize: '16px',
+            }}
+          >
+            Move your left hand to follow the target
+          </div>
+
+          {/* Feedback */}
+          <div
+            style={{
+              marginTop: '30px',
+              color: isNearTarget ? '#22c55e' : '#4a9eff',
+              fontSize: '24px',
+              fontWeight: 600,
+              height: '36px',
+            }}
+          >
+            {isNearTarget ? '✓ Good! Hold it...' : 'Move to the target'}
+          </div>
+
+          {/* Progress bar */}
+          <div
+            style={{
+              width: '400px',
+              maxWidth: '80vw',
+              marginTop: '20px',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                height: '8px',
+                background: 'rgba(255,255,255,0.1)',
+                borderRadius: '4px',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: `${calibrationProgress}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #4a9eff, #22c55e)',
+                  transition: 'width 0.1s',
+                }}
+              />
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                marginTop: '8px',
+                color: 'rgba(255,255,255,0.5)',
+                fontSize: '14px',
+              }}
+            >
+              <span>Target {currentTargetIndex + 1} of {CALIBRATION_TARGETS.length}</span>
+              <span>{Math.round(calibrationProgress)}%</span>
+            </div>
+          </div>
+
+          {/* Skip hint */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '30px',
+              color: 'rgba(255,255,255,0.3)',
+              fontSize: '12px',
+            }}
+          >
+            Press C to restart calibration
+          </div>
+        </div>
+      )}
+
+      {/* Recalibrate hint */}
+      {!isCalibrating && calibratedRangeRef.current && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '2px',
+            right: '4px',
+            fontSize: '6px',
+            color: 'rgba(255,255,255,0.4)',
+          }}
+        >
+          C to recal
+        </div>
+      )}
 
       {error && (
         <div

@@ -132,10 +132,9 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     const smoothed = smoothLandmarks(landmarks, smoothedLandmarksRef.current);
     smoothedLandmarksRef.current = smoothed;
 
-    // Get index finger tip for cursor position
-    // Flip x because MediaPipe works on un-mirrored video but we display mirrored
+    // Get index finger tip for cursor position (raw MediaPipe coordinates)
     const indexTip = smoothed[INDEX_TIP];
-    const screenPos = { x: 1.0 - indexTip.x, y: indexTip.y };
+    const screenPos = { x: indexTip.x, y: indexTip.y };
 
     // Detect gesture
     const gesture = detectGesture(smoothed);
