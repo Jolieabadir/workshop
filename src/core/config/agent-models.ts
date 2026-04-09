@@ -16,7 +16,7 @@ export const AGENT_MODELS = {
 
 // Token limits per agent
 export const AGENT_MAX_TOKENS = {
-  builder: 1024,
+  builder: 4096,  // Higher limit to allow multiple tool calls for compound structures
   owl: 512,
   cat: 1024,
   safety: 512,

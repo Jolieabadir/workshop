@@ -51,37 +51,68 @@ export async function POST(request: NextRequest) {
 
     userMessage += `\n\n---\n\nUser says: "${transcript}"`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      system: BUILDER_SYSTEM_PROMPT,
-      tools: BUILDER_TOOLS,
-      tool_choice: { type: 'auto' },
-      messages: [
-        {
-          role: 'user',
-          content: userMessage,
-        },
-      ],
-    });
+    // Multi-round tool calling loop
+    // Claude returns tool calls, we send back results, Claude makes more calls
+    let messages: Anthropic.MessageParam[] = [
+      { role: 'user', content: userMessage },
+    ];
 
-    const actions: BuilderAction[] = [];
+    const allActions: BuilderAction[] = [];
+    let continueLoop = true;
+    let iterations = 0;
+    const MAX_ITERATIONS = 5; // Safety limit
 
-    console.log('[AGENT API] Raw response blocks:', response.content.length);
-    for (const block of response.content) {
-      console.log('[AGENT API] Block type:', block.type, block.type === 'tool_use' ? (block as { name: string }).name : '');
-      if (block.type === 'tool_use') {
-        const toolBlock = block as { name: string; input: Record<string, unknown> };
-        console.log('[AGENT API] Tool call:', toolBlock.name, JSON.stringify(toolBlock.input));
-        const action = parseToolCallToAction(toolBlock.name, toolBlock.input);
-        if (action) {
-          actions.push(action);
+    while (continueLoop && iterations < MAX_ITERATIONS) {
+      iterations++;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: BUILDER_SYSTEM_PROMPT,
+        tools: BUILDER_TOOLS,
+        tool_choice: { type: 'auto' },
+        messages,
+      });
+
+      console.log(`[AGENT API] Round ${iterations} - blocks: ${response.content.length}, stop_reason: ${response.stop_reason}`);
+
+      // Collect any tool calls from this round
+      const toolUseBlocks = response.content.filter(
+        (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
+      );
+
+      for (const block of response.content) {
+        if (block.type === 'tool_use') {
+          console.log('[AGENT API] Tool call:', block.name, JSON.stringify(block.input));
+          const action = parseToolCallToAction(block.name, block.input as Record<string, unknown>);
+          if (action) {
+            allActions.push(action);
+          }
         }
+      }
+
+      // If Claude wants to make more tool calls (stop_reason is 'tool_use'),
+      // send back tool results and continue
+      if (response.stop_reason === 'tool_use' && toolUseBlocks.length > 0) {
+        // Add assistant's response to conversation
+        messages.push({ role: 'assistant', content: response.content });
+
+        // Add tool results for each tool call
+        const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map(block => ({
+          type: 'tool_result' as const,
+          tool_use_id: block.id,
+          content: 'OK — action executed successfully',
+        }));
+
+        messages.push({ role: 'user', content: toolResults });
+      } else {
+        // Claude is done (stop_reason is 'end_turn' or no more tool calls)
+        continueLoop = false;
       }
     }
 
-    console.log('[AGENT API] Final actions:', actions.length, JSON.stringify(actions.map(a => ({ type: a.type, message: a.type === 'respond_verbally' ? (a as { message: string }).message : undefined }))));
-    return NextResponse.json({ actions });
+    console.log(`[AGENT API] Completed in ${iterations} rounds, total actions: ${allActions.length}`);
+    return NextResponse.json({ actions: allActions });
   } catch (error) {
     console.error('Builder agent error:', error);
 
