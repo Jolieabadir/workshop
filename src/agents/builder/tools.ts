@@ -7,7 +7,7 @@ import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 export const BUILDER_TOOLS: Tool[] = [
   {
     name: 'create_node',
-    description: 'Create a new node/card in the 3D canvas to represent an idea, concept, or piece of information.',
+    description: 'Create a node in the 3D canvas for abstract ideas, concepts, or text notes. Do NOT use this for electronic components, mechanical parts, or physical objects — use create_component for those instead.',
     input_schema: {
       type: 'object' as const,
       properties: {
