@@ -5,8 +5,10 @@ import { BUILDER_TOOLS } from '@/agents/builder/tools';
 import {
   formatCanvasStateForLLM,
   formatIntentContext,
+  formatSpatialContext,
   parseToolCallToAction,
   type IntentData,
+  type SpatialContext,
 } from '@/agents/builder/action-parser';
 import type { BuilderAction, CanvasState } from '@/core/types';
 
@@ -18,12 +20,13 @@ interface AgentRequest {
   transcript: string;
   canvasState: CanvasState;
   intent?: IntentData | null;
+  spatialContext?: SpatialContext | null;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: AgentRequest = await request.json();
-    const { transcript, canvasState, intent } = body;
+    const { transcript, canvasState, intent, spatialContext } = body;
 
     if (!transcript || transcript.trim() === '') {
       return NextResponse.json({ actions: [] });
@@ -31,9 +34,16 @@ export async function POST(request: NextRequest) {
 
     const canvasContext = formatCanvasStateForLLM(canvasState);
 
-    // Build the user message with optional intent context
+    // Build the user message with canvas state, spatial context, and optional intent
     let userMessage = canvasContext;
 
+    // Add spatial context from hand tracking (preferred source of spatial info)
+    if (spatialContext) {
+      const spatialInfo = formatSpatialContext(spatialContext, canvasState);
+      userMessage += `\n\n${spatialInfo}`;
+    }
+
+    // Add legacy intent context if provided (for backwards compatibility)
     if (intent) {
       const intentContext = formatIntentContext(intent, canvasState);
       userMessage += `\n\n${intentContext}`;

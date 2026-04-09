@@ -201,21 +201,9 @@ class InputManager {
       this.lastPointerPosition = position;
     }
 
-    // Handle pure gesture intents (no voice)
-    if (gesture === 'pinch' && hoveredNodeId) {
-      // Grabbing a node — don't create intent yet, wait for release
-    } else if (gesture === 'open_palm') {
-      // Palm gesture — could be used for commands
-      inputStore.addIntent({
-        type: 'gesture_only',
-        isFinal: true,
-        gesture: 'open_palm',
-        position: position || undefined,
-        source: 'hand',
-        confidence: 0.6,
-        resolvedReferences: {},
-      });
-    }
+    // Note: Gesture-only intents are not created here.
+    // The raycaster handles pinch (grab/drag) and resize (scale) directly.
+    // Voice intents are processed through processVoiceInput.
   }
 
   /**
@@ -290,7 +278,7 @@ class InputManager {
    */
   private classifyIntent(transcript: string, gesture: HandGesture): IntentType {
     // Check each pattern
-    for (const { type, patterns, confidence } of INTENT_PATTERNS) {
+    for (const { type, patterns } of INTENT_PATTERNS) {
       const matches = patterns.some((p) => p.test(transcript));
       if (matches) {
         return type;
@@ -301,8 +289,8 @@ class InputManager {
     if (gesture === 'pinch') {
       return 'move';
     }
-    if (gesture === 'point') {
-      return 'select';
+    if (gesture === 'resize') {
+      return 'update'; // Resize maps to update intent
     }
 
     // Default to voice_only if we have transcript but no clear intent

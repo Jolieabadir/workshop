@@ -18,8 +18,8 @@ export const BUILDER_TOOLS: Tool[] = [
         },
         shape: {
           type: 'string',
-          enum: ['sphere', 'cube', 'hexagon', 'cylinder', 'torus'],
-          description: 'The 3D shape for the node. cube=components/hardware, sphere=concepts/abstract, cylinder=processes/flows, hexagon=categories/groups, torus=questions/unknowns.',
+          enum: ['sphere', 'cube', 'hexagon', 'cylinder', 'torus', 'cone', 'octahedron', 'dodecahedron', 'knot', 'icosahedron'],
+          description: 'The 3D shape based on semantic meaning: sphere=concepts/abstract ideas, cube=components/concrete things, hexagon=categories/groups, cylinder=processes/flows, torus=questions/unknowns, cone=decisions/direction/funneling, octahedron=constraints/boundaries/rules, dodecahedron=complex/multifaceted concepts, knot=dependencies/entanglements/problems, icosahedron=data points/metrics/measurements.',
         },
         content: {
           type: 'string',

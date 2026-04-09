@@ -5,7 +5,17 @@
 export type NodeType = 'text_card' | 'diagram' | 'table' | 'code_block' | 'image' | 'placeholder';
 
 /** 3D shape for rendering the node in the scene */
-export type NodeShape = 'sphere' | 'cube' | 'hexagon' | 'cylinder' | 'torus';
+export type NodeShape =
+  | 'sphere'       // concepts, abstract ideas
+  | 'cube'         // components, concrete things
+  | 'hexagon'      // categories, groups
+  | 'cylinder'     // processes, flows
+  | 'torus'        // questions, unknowns
+  | 'cone'         // decisions, direction, funneling
+  | 'octahedron'   // constraints, boundaries, rules
+  | 'dodecahedron' // complex ideas, multifaceted concepts
+  | 'knot'         // dependencies, entanglements, problems
+  | 'icosahedron'; // data points, metrics, measurements
 
 export interface Vec3 {
   x: number;

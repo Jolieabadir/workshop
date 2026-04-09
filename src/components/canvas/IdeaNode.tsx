@@ -4,7 +4,7 @@ import { Html, RoundedBox } from '@react-three/drei';
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { CanvasNode, NodeType } from '@/core/types';
+import type { CanvasNode, NodeType, NodeShape } from '@/core/types';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
 
@@ -99,16 +99,16 @@ export function IdeaNode({ node }: IdeaNodeProps) {
     return parseColor(node.color, TYPE_COLORS[node.type] || TYPE_COLORS.placeholder);
   }, [node.color, node.type]);
 
-  // Create hexagonal geometry for diagram type
+  // Create hexagonal geometry for hexagon shape
   const hexGeometry = useMemo(() => {
-    if (node.type === 'diagram') {
+    if (node.shape === 'hexagon') {
       const geo = createHexagonalPrismGeometry(0.5, 0.3);
       geo.center();
       geo.rotateX(Math.PI / 2);
       return geo;
     }
     return null;
-  }, [node.type]);
+  }, [node.shape]);
 
   // Animation: gentle float + hover pulse
   useFrame((_, delta) => {
@@ -159,7 +159,7 @@ export function IdeaNode({ node }: IdeaNodeProps) {
     document.body.style.cursor = 'auto';
   };
 
-  // Render the appropriate 3D shape based on node type
+  // Render the appropriate 3D shape based on node.shape (type determines color, shape determines geometry)
   const renderShape = () => {
     const material = (
       <meshStandardMaterial
@@ -174,43 +174,12 @@ export function IdeaNode({ node }: IdeaNodeProps) {
       />
     );
 
-    switch (node.type) {
-      case 'text_card':
-        // Rounded box
-        return (
-          <RoundedBox args={[1.2, 0.8, 0.3]} radius={0.08} smoothness={4}>
-            {material}
-          </RoundedBox>
-        );
+    // Use node.shape for geometry, fallback to sphere for backward compatibility
+    const shape: NodeShape = node.shape || 'sphere';
 
-      case 'diagram':
-        // Hexagonal prism
-        return hexGeometry ? (
-          <mesh geometry={hexGeometry}>
-            {material}
-          </mesh>
-        ) : null;
-
-      case 'table':
-        // Flat wide box
-        return (
-          <mesh>
-            <boxGeometry args={[1.5, 0.15, 1]} />
-            {material}
-          </mesh>
-        );
-
-      case 'code_block':
-        // Cube
-        return (
-          <mesh>
-            <boxGeometry args={[0.8, 0.8, 0.8]} />
-            {material}
-          </mesh>
-        );
-
-      case 'image':
-        // Sphere
+    switch (shape) {
+      case 'sphere':
+        // Smooth, medium-sized sphere for concepts and abstract ideas
         return (
           <mesh>
             <sphereGeometry args={[0.5, 32, 32]} />
@@ -218,12 +187,90 @@ export function IdeaNode({ node }: IdeaNodeProps) {
           </mesh>
         );
 
-      case 'placeholder':
-      default:
-        // Small sphere
+      case 'cube':
+        // Solid, blocky shape for components and concrete things
+        return (
+          <RoundedBox args={[0.9, 0.9, 0.9]} radius={0.06} smoothness={4}>
+            {material}
+          </RoundedBox>
+        );
+
+      case 'hexagon':
+        // Hexagonal prism for categories and groups
+        return hexGeometry ? (
+          <mesh geometry={hexGeometry}>
+            {material}
+          </mesh>
+        ) : null;
+
+      case 'cylinder':
+        // Tall pillar shape for processes and flows
         return (
           <mesh>
-            <sphereGeometry args={[0.4, 24, 24]} />
+            <cylinderGeometry args={[0.35, 0.35, 1.0, 24]} />
+            {material}
+          </mesh>
+        );
+
+      case 'torus':
+        // Clear ring shape for questions and unknowns
+        return (
+          <mesh>
+            <torusGeometry args={[0.4, 0.15, 16, 32]} />
+            {material}
+          </mesh>
+        );
+
+      case 'cone':
+        // Pointed shape for decisions and direction
+        return (
+          <mesh>
+            <coneGeometry args={[0.45, 0.9, 24]} />
+            {material}
+          </mesh>
+        );
+
+      case 'octahedron':
+        // Diamond-like shape for constraints and rules
+        return (
+          <mesh>
+            <octahedronGeometry args={[0.55]} />
+            {material}
+          </mesh>
+        );
+
+      case 'dodecahedron':
+        // Complex polyhedron for multifaceted concepts
+        return (
+          <mesh>
+            <dodecahedronGeometry args={[0.5]} />
+            {material}
+          </mesh>
+        );
+
+      case 'knot':
+        // Torus knot for dependencies and entanglements
+        return (
+          <mesh>
+            <torusKnotGeometry args={[0.3, 0.1, 64, 8]} />
+            {material}
+          </mesh>
+        );
+
+      case 'icosahedron':
+        // Faceted sphere for data points and metrics
+        return (
+          <mesh>
+            <icosahedronGeometry args={[0.5]} />
+            {material}
+          </mesh>
+        );
+
+      default:
+        // Fallback to sphere
+        return (
+          <mesh>
+            <sphereGeometry args={[0.5, 32, 32]} />
             {material}
           </mesh>
         );
@@ -233,10 +280,14 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   // Combined hover state (mouse or hand)
   const isAnyHover = hovered || isHandHovered;
 
+  // Apply node scale (from resize gesture or Builder agent)
+  const nodeScale = node.scale ?? { x: 1, y: 1, z: 1 };
+
   return (
     <group
       ref={groupRef}
       position={[node.position.x, node.position.y, node.position.z]}
+      scale={[nodeScale.x, nodeScale.y, nodeScale.z]}
     >
       {/* The 3D shape */}
       <mesh

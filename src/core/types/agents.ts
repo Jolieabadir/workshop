@@ -6,7 +6,7 @@ import type { CanvasNode, NodeType, NodeShape, Vec3 } from './canvas';
 
 /** Actions the Builder can perform via tool calls */
 export type BuilderAction =
-  | { type: 'create_node'; nodeType: NodeType; shape: NodeShape; content: string; title?: string; position?: Vec3 }
+  | { type: 'create_node'; nodeType: NodeType; shape: NodeShape; content: string; title?: string; position?: Vec3; connectedToId?: string }
   | { type: 'create_connection'; fromId: string; toId: string; label?: string }
   | { type: 'group_nodes'; nodeIds: string[]; label: string }
   | { type: 'move_node'; nodeId: string; position: Vec3 }

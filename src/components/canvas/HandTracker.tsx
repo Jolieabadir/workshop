@@ -1,8 +1,20 @@
 'use client';
 
+// =============================================================================
+// HAND MIRRORING NOTE:
+// MediaPipe mirrors the webcam by default. This means handedness labels are swapped:
+//   MediaPipe "Left"  = user's RIGHT hand (appears on left side of mirrored image)
+//   MediaPipe "Right" = user's LEFT hand  (appears on right side of mirrored image)
+// We flip the labels when reading MediaPipe results so the rest of the codebase
+// can use "left" and "right" to mean the user's actual physical hands.
+// The screen coordinates are also mirrored, which is handled in HandCursor.tsx
+// by negating the x-coordinate when converting to NDC for raycasting.
+// =============================================================================
+
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
 import { useHandStore } from '@/store/hand-store';
+import { useSharedWebcam } from './SharedWebcam';
 import type { HandGesture } from '@/core/types';
 
 // MediaPipe hand landmark indices
@@ -12,10 +24,15 @@ const MIDDLE_TIP = 12;
 const RING_TIP = 16;
 const PINKY_TIP = 20;
 const WRIST = 0;
+const INDEX_MCP = 5;
+const MIDDLE_MCP = 9;
+const RING_MCP = 13;
+const PINKY_MCP = 17;
 
 // Gesture thresholds
 const PINCH_THRESHOLD = 0.07;
-const OPEN_PALM_THRESHOLD = 0.12;
+const FINGER_EXTENDED_THRESHOLD = 0.15; // Distance from tip to MCP for extended finger
+const FINGER_CURLED_THRESHOLD = 0.08;   // Distance from tip to palm for curled finger
 
 // Smoothing factor for EMA (lower = smoother)
 const SMOOTHING_ALPHA = 0.25;
@@ -25,8 +42,7 @@ interface HandTrackerProps {
 }
 
 export function HandTracker({ enabled = true }: HandTrackerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { videoRef, canvasRef, isReady } = useSharedWebcam();
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const animationFrameRef = useRef<number>(0);
   const lastVideoTimeRef = useRef<number>(-1);
@@ -35,7 +51,6 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   const smoothedLandmarksRef = useRef<{ x: number; y: number; z: number }[] | null>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Hand store actions
   const setTracking = useHandStore((s) => s.setTracking);
@@ -59,35 +74,32 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   }, []);
 
   // Detect gesture from hand landmarks
+  // Only three gestures: pinch (grab), resize (scale), none (passive hover)
   const detectGesture = useCallback((
     landmarks: { x: number; y: number; z: number }[]
   ): HandGesture => {
     const pinchDist = landmarkDistance(landmarks, THUMB_TIP, INDEX_TIP);
 
+    // Pinch: thumb and index finger touching
     if (pinchDist < PINCH_THRESHOLD) {
       return 'pinch';
     }
 
-    // Check for open palm (fingers spread)
-    const thumbIndex = landmarkDistance(landmarks, THUMB_TIP, INDEX_TIP);
-    const indexMiddle = landmarkDistance(landmarks, INDEX_TIP, MIDDLE_TIP);
-    const middleRing = landmarkDistance(landmarks, MIDDLE_TIP, RING_TIP);
-    const ringPinky = landmarkDistance(landmarks, RING_TIP, PINKY_TIP);
+    // Resize: thumb, index, and middle extended; ring and pinky curled
+    // Check if thumb, index, middle are extended (tips far from wrist)
+    const thumbExtended = landmarkDistance(landmarks, THUMB_TIP, WRIST) > FINGER_EXTENDED_THRESHOLD;
+    const indexExtended = landmarkDistance(landmarks, INDEX_TIP, INDEX_MCP) > FINGER_EXTENDED_THRESHOLD * 0.6;
+    const middleExtended = landmarkDistance(landmarks, MIDDLE_TIP, MIDDLE_MCP) > FINGER_EXTENDED_THRESHOLD * 0.6;
 
-    const avgFingerSpread = (thumbIndex + indexMiddle + middleRing + ringPinky) / 4;
-    if (avgFingerSpread > OPEN_PALM_THRESHOLD) {
-      return 'open_palm';
+    // Check if ring and pinky are curled (tips close to palm center / MCP joints)
+    const ringCurled = landmarkDistance(landmarks, RING_TIP, RING_MCP) < FINGER_CURLED_THRESHOLD;
+    const pinkyCurled = landmarkDistance(landmarks, PINKY_TIP, PINKY_MCP) < FINGER_CURLED_THRESHOLD;
+
+    if (thumbExtended && indexExtended && middleExtended && ringCurled && pinkyCurled) {
+      return 'resize';
     }
 
-    // Check for pointing (index extended, others curled)
-    const indexExtended = landmarks[INDEX_TIP].y < landmarks[WRIST].y;
-    const middleCurled = landmarks[MIDDLE_TIP].y > landmarks[INDEX_TIP].y + 0.05;
-    const ringCurled = landmarks[RING_TIP].y > landmarks[INDEX_TIP].y + 0.05;
-
-    if (indexExtended && middleCurled && ringCurled) {
-      return 'point';
-    }
-
+    // Everything else is 'none' — hand is present but not doing a specific gesture
     return 'none';
   }, [landmarkDistance]);
 
@@ -125,38 +137,21 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     // Detect gesture
     const gesture = detectGesture(smoothed);
 
-    // Update hand store - only screenPosition and gesture matter for HandCursor
+    // Calculate thumb-to-middle distance for resize gesture aperture
+    // This is used by HandRaycaster to determine scale factor
+    const resizeAperture = landmarkDistance(smoothed, THUMB_TIP, MIDDLE_TIP);
+
+    // Update hand store
     setRightHand({
       isDetected: true,
       screenPosition: screenPos,
       gesture,
+      pinchDistance: resizeAperture, // Reusing pinchDistance field for resize aperture
     });
-  }, [smoothLandmarks, detectGesture, setRightHand]);
+  }, [smoothLandmarks, detectGesture, setRightHand, landmarkDistance]);
 
-  // Process results from MediaPipe
-  const processResults = useCallback((results: HandLandmarkerResult) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-
-    if (!canvas || !ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Use first detected hand (any hand)
-    if (results.landmarks && results.landmarks.length > 0) {
-      const landmarks = results.landmarks[0];
-      processHand(landmarks);
-
-      // Draw hand visualization
-      drawHand(ctx, landmarks, canvas.width, canvas.height);
-    } else {
-      // No hand detected
-      setRightHandDetected(false);
-      smoothedLandmarksRef.current = null;
-    }
-  }, [processHand, setRightHandDetected]);
-
-  // Draw hand landmarks
-  const drawHand = (
+  // Draw hand landmarks (green for right hand)
+  const drawHand = useCallback((
     ctx: CanvasRenderingContext2D,
     landmarks: { x: number; y: number; z: number }[],
     width: number,
@@ -201,7 +196,39 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     ctx.stroke();
 
     ctx.globalAlpha = 1;
-  };
+  }, []);
+
+  // Process results from MediaPipe - filter for right hand only
+  const processResults = useCallback((results: HandLandmarkerResult) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Find right hand in results
+    if (results.landmarks && results.handedness) {
+      for (let i = 0; i < results.landmarks.length; i++) {
+        const handedness = results.handedness[i];
+        // MediaPipe reports handedness from camera's perspective
+        // So "Left" from camera = user's right hand (since video is mirrored)
+        const isRightHand = handedness?.[0]?.categoryName === 'Left';
+
+        if (isRightHand) {
+          const landmarks = results.landmarks[i];
+          processHand(landmarks);
+
+          // Draw hand visualization
+          drawHand(ctx, landmarks, canvas.width, canvas.height);
+          return; // Found right hand, stop searching
+        }
+      }
+    }
+
+    // No right hand detected
+    setRightHandDetected(false);
+    smoothedLandmarksRef.current = null;
+  }, [canvasRef, processHand, drawHand, setRightHandDetected]);
 
   // Initialize MediaPipe
   useEffect(() => {
@@ -221,7 +248,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
             delegate: 'GPU',
           },
           runningMode: 'VIDEO',
-          numHands: 1, // Only track one hand
+          numHands: 2, // Track both hands so we can filter for right
           minHandDetectionConfidence: 0.5,
           minHandPresenceConfidence: 0.5,
           minTrackingConfidence: 0.5,
@@ -233,7 +260,6 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
         }
       } catch (err) {
         console.error('Failed to initialize HandLandmarker:', err);
-        if (mounted) setError('Failed to load hand tracking');
       }
     };
 
@@ -245,141 +271,36 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     };
   }, [enabled]);
 
-  // Start webcam and detection loop
+  // Detection loop - uses shared video element from context
   useEffect(() => {
-    if (!enabled || !isInitialized) return;
+    if (!enabled || !isInitialized || !isReady) return;
 
     let mounted = true;
+    setTracking(true);
 
-    const startWebcam = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-        });
+    const detectLoop = () => {
+      if (!mounted || !videoRef.current || !handLandmarkerRef.current) return;
 
-        if (!mounted || !videoRef.current) return;
-
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setTracking(true);
-
-        const detectLoop = () => {
-          if (!mounted || !videoRef.current || !handLandmarkerRef.current) return;
-
-          const video = videoRef.current;
-          if (video.currentTime !== lastVideoTimeRef.current && video.readyState >= 2) {
-            lastVideoTimeRef.current = video.currentTime;
-            const results = handLandmarkerRef.current.detectForVideo(video, performance.now());
-            processResults(results);
-          }
-
-          animationFrameRef.current = requestAnimationFrame(detectLoop);
-        };
-
-        detectLoop();
-      } catch (err) {
-        console.error('Failed to start webcam:', err);
-        if (mounted) setError('Camera access denied');
+      const video = videoRef.current;
+      if (video.currentTime !== lastVideoTimeRef.current && video.readyState >= 2) {
+        lastVideoTimeRef.current = video.currentTime;
+        const results = handLandmarkerRef.current.detectForVideo(video, performance.now());
+        processResults(results);
       }
+
+      animationFrameRef.current = requestAnimationFrame(detectLoop);
     };
 
-    startWebcam();
+    detectLoop();
 
     return () => {
       mounted = false;
       cancelAnimationFrame(animationFrameRef.current);
-      const video = videoRef.current;
-      if (video?.srcObject) {
-        (video.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-      }
       reset();
     };
-  }, [enabled, isInitialized, setTracking, processResults, reset]);
+  }, [enabled, isInitialized, isReady, videoRef, setTracking, processResults, reset]);
 
-  // Sync canvas size
-  useEffect(() => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (video && canvas) {
-      const updateSize = () => {
-        canvas.width = video.videoWidth || 320;
-        canvas.height = video.videoHeight || 240;
-      };
-      video.addEventListener('loadedmetadata', updateSize);
-      updateSize();
-      return () => video.removeEventListener('loadedmetadata', updateSize);
-    }
-  }, []);
-
-  if (!enabled) return null;
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: '100px',
-        left: '20px',
-        zIndex: 20,
-        borderRadius: '12px',
-        overflow: 'hidden',
-        border: '2px solid rgba(255,255,255,0.2)',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-        background: '#0a0a1a',
-      }}
-    >
-      <video
-        ref={videoRef}
-        style={{
-          width: '160px',
-          height: '120px',
-          transform: 'scaleX(-1)',
-          display: 'block',
-        }}
-        playsInline
-        muted
-      />
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '160px',
-          height: '120px',
-          transform: 'scaleX(-1)',
-          pointerEvents: 'none',
-        }}
-      />
-      {/* Status indicator */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '4px',
-          right: '4px',
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          background: error ? '#ef4444' : isInitialized ? '#22c55e' : '#f59e0b',
-        }}
-      />
-      {error && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '4px',
-            left: '4px',
-            right: '4px',
-            padding: '4px',
-            background: 'rgba(239, 68, 68, 0.9)',
-            color: '#fff',
-            fontSize: '8px',
-            textAlign: 'center',
-            borderRadius: '4px',
-          }}
-        >
-          {error}
-        </div>
-      )}
-    </div>
-  );
+  // HandTracker no longer renders UI - SharedWebcam handles the video/canvas display
+  // This component just handles the MediaPipe detection logic for the right hand
+  return null;
 }

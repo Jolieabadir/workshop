@@ -1,10 +1,14 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHandStore } from '@/store/hand-store';
 import { useCanvasStore } from '@/store/canvas-store';
+
+// Scale constraints for resize gesture
+const MIN_SCALE = 0.3;
+const MAX_SCALE = 3.0;
 
 // Store node mesh references for raycasting
 const nodeMeshes = new Map<string, THREE.Object3D>();
@@ -18,12 +22,17 @@ export function registerNodeMesh(nodeId: string, mesh: THREE.Object3D | null) {
 }
 
 export function HandRaycaster() {
-  const { camera, scene } = useThree();
+  const { camera } = useThree();
   const raycaster = useRef(new THREE.Raycaster());
   const pointer = useRef(new THREE.Vector2());
 
   // Previous position for delta calculation during drag
   const prevDragPosRef = useRef<THREE.Vector3 | null>(null);
+
+  // Resize gesture state
+  const resizeAnchorDistanceRef = useRef<number | null>(null);
+  const resizeTargetNodeIdRef = useRef<string | null>(null);
+  const resizeInitialScaleRef = useRef<number>(1);
 
   // Hand store state
   const rightHand = useHandStore((s) => s.rightHand);
@@ -34,12 +43,16 @@ export function HandRaycaster() {
   // Canvas store actions
   const nodes = useCanvasStore((s) => s.nodes);
   const moveNode = useCanvasStore((s) => s.moveNode);
+  const updateNode = useCanvasStore((s) => s.updateNode);
   const pushFocus = useCanvasStore((s) => s.pushFocus);
-  const setNextPlacementPosition = useCanvasStore((s) => s.setNextPlacementPosition);
+  const focusStack = useCanvasStore((s) => s.focusStack);
 
   const screenPos = rightHand.screenPosition;
   const gesture = rightHand.gesture;
   const isDetected = rightHand.isDetected;
+
+  // Get thumb-to-middle distance for resize gesture (passed via pinchDistance field)
+  const pinchDistance = rightHand.pinchDistance;
 
   useFrame(() => {
     if (!isDetected || !screenPos) {
@@ -92,8 +105,13 @@ export function HandRaycaster() {
       }
     }
 
-    // Handle PINCH gesture (grab/drag)
+    // Handle gestures
     if (gesture === 'pinch') {
+      // PINCH: grab and drag nodes
+      // Clear resize state when switching to pinch
+      resizeAnchorDistanceRef.current = null;
+      resizeTargetNodeIdRef.current = null;
+
       if (!grabbedNodeId && hitNodeId) {
         // Start grabbing
         console.log('[HAND] Grabbing node:', hitNodeId);
@@ -104,16 +122,12 @@ export function HandRaycaster() {
         // Continue dragging - move node based on ray position
         const node = nodes[grabbedNodeId];
         if (node && prevDragPosRef.current) {
-          // Calculate delta movement
           const delta = hitPoint.clone().sub(prevDragPosRef.current);
-
-          // Apply movement to node position
           const newPos = {
             x: node.position.x + delta.x,
-            y: Math.max(0.5, node.position.y + delta.y), // Keep above ground
+            y: Math.max(0.5, node.position.y + delta.y),
             z: node.position.z + delta.z,
           };
-
           moveNode(grabbedNodeId, newPos);
         }
         prevDragPosRef.current = hitPoint;
@@ -137,40 +151,53 @@ export function HandRaycaster() {
           prevDragPosRef.current = rayPoint;
         }
       }
-    } else {
-      // Not pinching - release any grabbed node
+    } else if (gesture === 'resize') {
+      // RESIZE: scale node based on finger aperture
+      // Release any grabbed node when switching to resize
       if (grabbedNodeId) {
         setGrabbedNode(null);
         prevDragPosRef.current = null;
       }
 
-      // Update hover state
-      if (gesture === 'point' || gesture === 'none') {
-        setHoveredNode(hitNodeId);
+      // Determine target node: hovered node or top of focus stack
+      const targetNodeId = hitNodeId || focusStack[0];
 
-        // Focus on hover for point gesture
-        if (gesture === 'point' && hitNodeId) {
-          pushFocus(hitNodeId);
+      if (targetNodeId && pinchDistance > 0) {
+        const node = nodes[targetNodeId];
+        if (node) {
+          // Initialize resize anchor on first frame of resize gesture
+          if (resizeAnchorDistanceRef.current === null || resizeTargetNodeIdRef.current !== targetNodeId) {
+            resizeAnchorDistanceRef.current = pinchDistance;
+            resizeTargetNodeIdRef.current = targetNodeId;
+            resizeInitialScaleRef.current = node.scale?.x ?? 1;
+            pushFocus(targetNodeId);
+          }
+
+          // Calculate scale multiplier based on aperture change
+          const scaleMultiplier = pinchDistance / resizeAnchorDistanceRef.current;
+          const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, resizeInitialScaleRef.current * scaleMultiplier));
+
+          // Apply uniform scale to node
+          updateNode(targetNodeId, {
+            scale: { x: newScale, y: newScale, z: newScale },
+          });
         }
       }
-    }
 
-    // Handle OPEN PALM pointing at empty space = set next placement position
-    if (gesture === 'open_palm' && !hitNodeId) {
-      // Project a point into 3D space for the palm position
-      // Use a horizontal plane at y=1.5 (typical node height) for placement
-      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.5);
-      const palmPoint = new THREE.Vector3();
-      raycaster.current.ray.intersectPlane(groundPlane, palmPoint);
-
-      if (palmPoint) {
-        // Set this as the target for next node placement
-        setNextPlacementPosition({
-          x: palmPoint.x,
-          y: 1.5, // Keep nodes at consistent height
-          z: palmPoint.z,
-        });
+      // Update hover state during resize
+      setHoveredNode(hitNodeId);
+    } else {
+      // NONE: passive hover - just raycast and update hovered node
+      // Clear all active states
+      if (grabbedNodeId) {
+        setGrabbedNode(null);
+        prevDragPosRef.current = null;
       }
+      resizeAnchorDistanceRef.current = null;
+      resizeTargetNodeIdRef.current = null;
+
+      // Update hover state
+      setHoveredNode(hitNodeId);
     }
   });
 

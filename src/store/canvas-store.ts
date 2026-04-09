@@ -5,7 +5,8 @@ function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const MIN_NODE_SPACING = 2.5;
+const MIN_NODE_SPACING = 2.0;
+const PLACEMENT_OFFSET = 2.5; // Distance from reference node when placing nearby
 
 /** Calculate distance between two 3D points */
 function distance(a: Vec3, b: Vec3): number {
@@ -25,50 +26,101 @@ function randomPosition(spread: number, yOffset: number): Vec3 {
   };
 }
 
-/** Find a position that maintains minimum spacing from existing nodes */
-function findSpacedPosition(existingNodes: Record<string, CanvasNode>): Vec3 {
-  const nodeList = Object.values(existingNodes);
+/**
+ * Find a position near a reference point with slight offset.
+ * The spatial engine will handle settling into equilibrium.
+ */
+function findPositionNear(
+  reference: Vec3,
+  existingNodes: Record<string, CanvasNode>,
+  offset: number = PLACEMENT_OFFSET
+): Vec3 {
+  // Try to find a position at offset distance in a random direction
+  const maxAttempts = 12;
+  const angleStep = (Math.PI * 2) / maxAttempts;
 
-  // If no existing nodes, place near center
-  if (nodeList.length === 0) {
-    return randomPosition(4, 1.5);
-  }
+  for (let i = 0; i < maxAttempts; i++) {
+    const angle = i * angleStep + Math.random() * 0.5;
+    const candidate: Vec3 = {
+      x: reference.x + Math.cos(angle) * offset,
+      y: reference.y + (Math.random() - 0.5) * 0.5, // Slight Y variation
+      z: reference.z + Math.sin(angle) * offset,
+    };
 
-  // Try to find a valid position with minimum spacing
-  const maxAttempts = 50;
-  let spread = 6; // Start with a reasonable spread
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const candidate = randomPosition(spread, 1.5);
-
-    // Check distance from all existing nodes
-    const isFarEnough = nodeList.every(
-      (node) => distance(candidate, node.position) >= MIN_NODE_SPACING
+    // Check if this position is far enough from other nodes
+    const isFarEnough = Object.values(existingNodes).every(
+      (node) => distance(candidate, node.position) >= MIN_NODE_SPACING * 0.8
     );
 
     if (isFarEnough) {
       return candidate;
     }
-
-    // Gradually increase spread if we can't find space
-    if (attempt % 10 === 9) {
-      spread += 2;
-    }
   }
 
-  // Fallback: place in a spiral pattern outward from center
-  const angle = nodeList.length * 0.8; // Golden angle approximation
-  const radius = MIN_NODE_SPACING * (1 + nodeList.length * 0.3);
+  // Fallback: just place with offset, let spatial engine sort it out
+  const fallbackAngle = Math.random() * Math.PI * 2;
   return {
-    x: Math.cos(angle) * radius,
-    y: 1.5 + (Math.random() - 0.5) * 2,
-    z: Math.sin(angle) * radius,
+    x: reference.x + Math.cos(fallbackAngle) * offset,
+    y: reference.y,
+    z: reference.z + Math.sin(fallbackAngle) * offset,
   };
+}
+
+/**
+ * Context-aware node placement.
+ * Priority: explicit position > near connected node > near group > fallback to spaced position
+ */
+function findContextAwarePosition(
+  existingNodes: Record<string, CanvasNode>,
+  groups: Record<string, CanvasGroup>,
+  connectedToId?: string,
+  groupId?: string
+): Vec3 {
+  // If connecting to an existing node, place near it
+  if (connectedToId && existingNodes[connectedToId]) {
+    return findPositionNear(existingNodes[connectedToId].position, existingNodes);
+  }
+
+  // If part of a group, place near the group centroid
+  if (groupId && groups[groupId]) {
+    return findPositionNear(groups[groupId].position, existingNodes, PLACEMENT_OFFSET * 0.8);
+  }
+
+  // Fallback to finding a spaced position
+  const nodeList = Object.values(existingNodes);
+
+  // If no existing nodes, place near center
+  if (nodeList.length === 0) {
+    return { x: 0, y: 1.5, z: 0 };
+  }
+
+  // If few nodes, place near the most recent one (likely related)
+  if (nodeList.length <= 3) {
+    const mostRecent = nodeList.reduce((latest, node) =>
+      node.updatedAt > latest.updatedAt ? node : latest
+    );
+    return findPositionNear(mostRecent.position, existingNodes);
+  }
+
+  // Find center of mass of all nodes
+  const centerOfMass: Vec3 = {
+    x: nodeList.reduce((sum, n) => sum + n.position.x, 0) / nodeList.length,
+    y: nodeList.reduce((sum, n) => sum + n.position.y, 0) / nodeList.length,
+    z: nodeList.reduce((sum, n) => sum + n.position.z, 0) / nodeList.length,
+  };
+
+  // Place at edge of the cluster
+  return findPositionNear(centerOfMass, existingNodes, PLACEMENT_OFFSET * 1.5);
+}
+
+interface PlacementContext {
+  connectedToId?: string;  // Place near this node (for connections)
+  groupId?: string;        // Place near this group's centroid
 }
 
 interface CanvasStore extends CanvasState {
   // Direct mutations
-  addNode: (type: NodeType, content: string, title?: string, position?: Vec3, shape?: NodeShape) => string;
+  addNode: (type: NodeType, content: string, title?: string, position?: Vec3, shape?: NodeShape, context?: PlacementContext) => string;
   removeNode: (id: string) => void;
   updateNode: (id: string, changes: Partial<CanvasNode>) => void;
   moveNode: (id: string, position: Vec3) => void;
@@ -93,10 +145,6 @@ interface CanvasStore extends CanvasState {
   builderTarget: Vec3 | null;
   setBuilderTarget: (pos: Vec3) => void;
 
-  // Next placement position (set by right hand open palm gesture at empty space)
-  nextPlacementPosition: Vec3 | null;
-  setNextPlacementPosition: (pos: Vec3 | null) => void;
-
   // Transcript
   transcript: string;
   setTranscript: (t: string) => void;
@@ -116,7 +164,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   builderPosition: { x: 0, y: 2, z: 2 },
   builderTarget: null,
-  nextPlacementPosition: null,
   transcript: '',
   isListening: false,
   lastAnalyzedAt: 0,
@@ -124,22 +171,24 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setTranscript: (t) => set({ transcript: t }),
   setListening: (v) => set({ isListening: v }),
   setLastAnalyzedAt: (t) => set({ lastAnalyzedAt: t }),
-  setNextPlacementPosition: (pos) => set({ nextPlacementPosition: pos }),
 
-  addNode: (type, content, title, position, shape = 'sphere') => {
+  addNode: (type, content, title, position, shape = 'sphere', context) => {
     const id = uid();
     const now = Date.now();
-    // Priority: explicit position > nextPlacementPosition (from hand gesture) > auto-spaced
+    // Use explicit position or find context-aware position
     const state = get();
-    const pos = position ?? state.nextPlacementPosition ?? findSpacedPosition(state.nodes);
+    const pos = position ?? findContextAwarePosition(
+      state.nodes,
+      state.groups,
+      context?.connectedToId,
+      context?.groupId
+    );
     set((s) => ({
       nodes: {
         ...s.nodes,
         [id]: { id, type, shape, content, title, position: pos, createdAt: now, updatedAt: now },
       },
       focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
-      // Clear nextPlacementPosition after using it
-      nextPlacementPosition: null,
     }));
     // Move builder avatar toward the new node
     get().setBuilderTarget(pos);
@@ -276,7 +325,15 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const store = get();
     switch (action.type) {
       case 'create_node':
-        store.addNode(action.nodeType, action.content, action.title, action.position, action.shape);
+        // Pass placement context if available (e.g., connected node ID)
+        store.addNode(
+          action.nodeType,
+          action.content,
+          action.title,
+          action.position,
+          action.shape,
+          action.connectedToId ? { connectedToId: action.connectedToId } : undefined
+        );
         break;
       case 'create_connection':
         store.addConnection(action.fromId, action.toId, action.label);
@@ -294,7 +351,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         store.removeNode(action.nodeId);
         break;
       case 'respond_verbally':
-        // TODO: pipe to TTS
+        // TTS handled in page.tsx
         console.log('[Builder says]:', action.message);
         break;
     }

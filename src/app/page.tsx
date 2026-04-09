@@ -12,6 +12,7 @@ import { getTTSPlayer } from '@/lib/tts-player';
 import { processHandInput } from '@/lib/input-manager';
 import { logBuilderActions, getActionSummary, getActionIcon, formatLogTime } from '@/agents/safety/logger';
 import type { BuilderAction, CanvasState, UnifiedIntent } from '@/core/types';
+import type { SpatialContext } from '@/agents/builder/action-parser';
 
 const Workshop3DCanvas = dynamic(
   () => import('@/components/canvas/Workshop3DCanvas').then((m) => m.Workshop3DCanvas),
@@ -20,6 +21,16 @@ const Workshop3DCanvas = dynamic(
 
 const HandTracker = dynamic(
   () => import('@/components/canvas/HandTracker').then((m) => m.HandTracker),
+  { ssr: false }
+);
+
+const LeftHandTracker = dynamic(
+  () => import('@/components/canvas/LeftHandTracker').then((m) => m.LeftHandTracker),
+  { ssr: false }
+);
+
+const SharedWebcamProvider = dynamic(
+  () => import('@/components/canvas/SharedWebcam').then((m) => m.SharedWebcamProvider),
   { ssr: false }
 );
 
@@ -182,14 +193,53 @@ export default function Home() {
     setIsProcessing(true);
     setTranscript(text);
 
-    // Get FRESH canvas state at call time (not stale closure)
-    const store = useCanvasStore.getState();
+    // Get FRESH state from all stores at call time (not stale closures)
+    const canvasStore = useCanvasStore.getState();
+    const handStore = useHandStore.getState();
+    const inputStore = useInputStore.getState();
+
     const canvasBefore: CanvasState = {
-      nodes: store.nodes,
-      connections: store.connections,
-      groups: store.groups,
-      focusStack: store.focusStack,
+      nodes: canvasStore.nodes,
+      connections: canvasStore.connections,
+      groups: canvasStore.groups,
+      focusStack: canvasStore.focusStack,
     };
+
+    // Build spatial context from hand tracking and input manager
+    const spatialContext: SpatialContext = {
+      rightHand: {
+        gesture: handStore.rightHand.gesture,
+        position: handStore.rightHand.position,
+        isDetected: handStore.rightHand.isDetected,
+      },
+      leftHand: {
+        gesture: handStore.leftHand.gesture,
+        position: handStore.leftHand.position,
+        isDetected: handStore.leftHand.isDetected,
+      },
+      hoveredNodeId: handStore.hoveredNodeId,
+      grabbedNodeId: handStore.grabbedNodeId,
+      pointedNodeId: inputStore.pointedNodeId,
+      resolvedReferences: {
+        // "this" = currently pointed node or top of focus stack
+        thisNode: inputStore.pointedNodeId || canvasStore.focusStack[0] || undefined,
+        // "that" = second in focus stack
+        thatNode: canvasStore.focusStack[1] || undefined,
+        // "here" = current pointer position (right hand)
+        herePosition: handStore.rightHand.position || inputStore.pointedPosition || undefined,
+        // "there" = remembered position (would need to track this separately, use here for now)
+        therePosition: inputStore.pointedPosition || undefined,
+      },
+      nextPlacementPosition: null, // No longer used - removed open_palm gesture
+      isCameraNavigating: handStore.cameraControl.isActive || handStore.leftHand.gesture === 'open_palm',
+    };
+
+    console.log('[PIPELINE] Spatial context:', {
+      rightGesture: spatialContext.rightHand.gesture,
+      hoveredNode: spatialContext.hoveredNodeId,
+      grabbedNode: spatialContext.grabbedNodeId,
+      resolvedThis: spatialContext.resolvedReferences.thisNode,
+    });
 
     try {
       const response = await fetch('/api/agent', {
@@ -198,6 +248,7 @@ export default function Home() {
         body: JSON.stringify({
           transcript: text,
           canvasState: canvasBefore,
+          spatialContext,
         }),
       });
 
@@ -257,7 +308,7 @@ export default function Home() {
 
       for (const action of actions) {
         console.log('[PIPELINE] 4. Executing action:', action.type, action);
-        store.executeAction(action);
+        canvasStore.executeAction(action);
 
         // Handle TTS for verbal responses - use Deepgram Aura for natural voice
         if (action.type === 'respond_verbally' && action.message) {
@@ -315,8 +366,15 @@ export default function Home() {
     <>
       <Workshop3DCanvas />
 
-      {/* Hand Tracker (webcam + MediaPipe) */}
-      {handTrackingEnabled && <HandTracker enabled={handTrackingEnabled} />}
+      {/* Hand Trackers (webcam + MediaPipe) - both share same video stream */}
+      <SharedWebcamProvider enabled={handTrackingEnabled}>
+        {handTrackingEnabled && (
+          <>
+            <HandTracker enabled={handTrackingEnabled} />
+            <LeftHandTracker enabled={handTrackingEnabled} />
+          </>
+        )}
+      </SharedWebcamProvider>
 
       {/* Safety Log Panel — Top Left */}
       <div

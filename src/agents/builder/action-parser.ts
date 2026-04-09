@@ -19,6 +19,37 @@ export interface IntentData {
   };
 }
 
+/** Spatial context from hand tracking for the Builder agent */
+export interface SpatialContext {
+  // Right hand (interaction: pinch to grab/drag, resize to scale)
+  rightHand: {
+    gesture: HandGesture;
+    position: Vec3 | null;
+    isDetected: boolean;
+  };
+  // Left hand (navigation: open_palm to orbit camera)
+  leftHand: {
+    gesture: HandGesture;
+    position: Vec3 | null;
+    isDetected: boolean;
+  };
+  // Node interaction state
+  hoveredNodeId: string | null;
+  grabbedNodeId: string | null;
+  pointedNodeId: string | null;
+  // Resolved references from voice + gesture fusion
+  resolvedReferences: {
+    thisNode?: string;
+    thatNode?: string;
+    herePosition?: Vec3;
+    therePosition?: Vec3;
+  };
+  // Is camera navigation active (left hand open palm)
+  isCameraNavigating: boolean;
+  // Deprecated - kept for backwards compatibility
+  nextPlacementPosition?: Vec3 | null;
+}
+
 /** Format canvas state as text for the LLM */
 export function formatCanvasStateForLLM(state: CanvasState): string {
   const nodes = Object.values(state.nodes);
@@ -58,6 +89,78 @@ export function formatCanvasStateForLLM(state: CanvasState): string {
   }
 
   return output;
+}
+
+/** Format spatial context for the Builder prompt */
+export function formatSpatialContext(spatial: SpatialContext, state: CanvasState): string {
+  const lines: string[] = ['## Spatial Context'];
+
+  // Right hand state (interaction hand)
+  if (spatial.rightHand.isDetected) {
+    let rightDesc = `Right hand gesture: ${spatial.rightHand.gesture}`;
+    if (spatial.hoveredNodeId) {
+      const node = state.nodes[spatial.hoveredNodeId];
+      if (node) {
+        rightDesc += `\nRight hand hovering over: "${node.title || node.content.slice(0, 30)}" (ID: ${spatial.hoveredNodeId})`;
+      }
+    }
+    if (spatial.rightHand.position) {
+      const p = spatial.rightHand.position;
+      rightDesc += `\nRight hand position: (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`;
+    }
+    lines.push(rightDesc);
+  } else {
+    lines.push('Right hand: not detected');
+  }
+
+  // Left hand state (navigation hand)
+  if (spatial.leftHand.isDetected) {
+    const navNote = spatial.isCameraNavigating ? ' (navigating camera)' : '';
+    lines.push(`Left hand gesture: ${spatial.leftHand.gesture}${navNote}`);
+  } else {
+    lines.push('Left hand: not detected');
+  }
+
+  // Grabbed node
+  if (spatial.grabbedNodeId) {
+    const node = state.nodes[spatial.grabbedNodeId];
+    if (node) {
+      lines.push(`Grabbed node: "${node.title || node.content.slice(0, 30)}" (ID: ${spatial.grabbedNodeId})`);
+    } else {
+      lines.push(`Grabbed node: ${spatial.grabbedNodeId}`);
+    }
+  } else {
+    lines.push('Grabbed node: none');
+  }
+
+  // Resolved references
+  const refs = spatial.resolvedReferences;
+  const refLines: string[] = [];
+  if (refs.thisNode) {
+    const node = state.nodes[refs.thisNode];
+    refLines.push(`  "this" → "${node?.title || node?.content.slice(0, 30) || refs.thisNode}" (ID: ${refs.thisNode})`);
+  }
+  if (refs.thatNode) {
+    const node = state.nodes[refs.thatNode];
+    refLines.push(`  "that" → "${node?.title || node?.content.slice(0, 30) || refs.thatNode}" (ID: ${refs.thatNode})`);
+  }
+  if (refs.herePosition) {
+    const p = refs.herePosition;
+    refLines.push(`  "here" → position (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`);
+  }
+  if (refs.therePosition) {
+    const p = refs.therePosition;
+    refLines.push(`  "there" → position (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`);
+  }
+
+  if (refLines.length > 0) {
+    lines.push('Resolved references:');
+    lines.push(...refLines);
+  } else {
+    lines.push('Resolved references: none');
+  }
+
+  return lines.join('\n');
 }
 
 /** Format intent context for the Builder prompt */

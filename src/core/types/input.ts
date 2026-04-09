@@ -4,8 +4,12 @@
 
 import type { Vec3 } from './canvas';
 
-/** Hand gesture types for MediaPipe tracking */
-export type HandGesture = 'none' | 'point' | 'pinch' | 'open_palm' | 'fist';
+/**
+ * Hand gesture types for MediaPipe tracking.
+ * Right hand uses: 'pinch' (grab/drag), 'resize' (scale), 'none' (passive hover)
+ * Left hand uses: 'open_palm' (camera orbit), 'fist' (reset camera), 'pinch' (zoom), 'none' (idle)
+ */
+export type HandGesture = 'none' | 'point' | 'pinch' | 'open_palm' | 'fist' | 'resize';
 
 /** Which hand (MediaPipe handedness) */
 export type Handedness = 'Left' | 'Right';
