@@ -5,7 +5,7 @@
  * as Server-Sent Events.
  */
 
-import { deepgramSessionManager } from '@/lib/deepgram-server';
+import { deepgramSessionManager } from '@/speech/deepgram-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -65,8 +65,8 @@ export function HandRaycaster() {
     }
 
     // Convert screen position (0-1) to normalized device coordinates (-1 to 1)
-    // Note: MediaPipe gives us mirrored X, so we flip it
-    pointer.current.x = (1 - screenPos.x) * 2 - 1;
+    // X is already flipped in HandTracker to match mirrored video display
+    pointer.current.x = screenPos.x * 2 - 1;
     pointer.current.y = -(screenPos.y) * 2 + 1;
 
     // Update raycaster

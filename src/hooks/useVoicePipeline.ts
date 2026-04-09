@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
-import { DeepgramClient } from '@/lib/deepgram';
+import { DeepgramClient } from '@/speech/deepgram-client';
 import type { UnifiedIntent } from '@/core/types';
 
 interface UseVoicePipelineOptions {

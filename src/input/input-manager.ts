@@ -153,11 +153,11 @@ class InputManager {
     const confidence = this.calculateConfidence(transcript, intentType);
 
     // Determine target node
-    let targetNodeId = resolvedReferences.thisNode || inputStore.pointedNodeId;
-    let secondaryNodeId = resolvedReferences.thatNode;
+    const targetNodeId = resolvedReferences.thisNode || inputStore.pointedNodeId;
+    const secondaryNodeId = resolvedReferences.thatNode;
 
     // For move intents, also capture position
-    let position = resolvedReferences.therePosition || inputStore.pointedPosition;
+    const position = resolvedReferences.therePosition || inputStore.pointedPosition;
 
     // Create the unified intent
     const intent = inputStore.addIntent({

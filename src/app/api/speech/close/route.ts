@@ -5,7 +5,7 @@
  * the server-side Deepgram WebSocket connection.
  */
 
-import { deepgramSessionManager } from '@/lib/deepgram-server';
+import { deepgramSessionManager } from '@/speech/deepgram-server';
 
 export const runtime = 'nodejs';
 

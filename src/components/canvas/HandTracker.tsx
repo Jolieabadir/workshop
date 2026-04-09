@@ -2,13 +2,12 @@
 
 // =============================================================================
 // HAND MIRRORING NOTE:
-// MediaPipe mirrors the webcam by default. This means handedness labels are swapped:
-//   MediaPipe "Left"  = user's RIGHT hand (appears on left side of mirrored image)
-//   MediaPipe "Right" = user's LEFT hand  (appears on right side of mirrored image)
-// We flip the labels when reading MediaPipe results so the rest of the codebase
-// can use "left" and "right" to mean the user's actual physical hands.
-// The screen coordinates are also mirrored, which is handled in HandCursor.tsx
-// by negating the x-coordinate when converting to NDC for raycasting.
+// The webcam video is displayed mirrored (CSS scaleX(-1)) but MediaPipe landmarks
+// are in un-mirrored coordinate space. This means:
+//   - Handedness labels are swapped: MediaPipe "Left" = user's physical RIGHT hand
+//   - X coordinates are inverted: we flip them here (1.0 - x) so screenPosition
+//     matches the mirrored video display and 3D cursor moves in the expected direction
+// Drawing code does NOT flip coordinates because the canvas also has scaleX(-1).
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react';
@@ -131,8 +130,9 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     smoothedLandmarksRef.current = smoothed;
 
     // Get index finger tip for cursor position
+    // Flip x because MediaPipe works on un-mirrored video but we display mirrored
     const indexTip = smoothed[INDEX_TIP];
-    const screenPos = { x: indexTip.x, y: indexTip.y };
+    const screenPos = { x: 1.0 - indexTip.x, y: indexTip.y };
 
     // Detect gesture
     const gesture = detectGesture(smoothed);
