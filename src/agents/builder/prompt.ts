@@ -123,15 +123,28 @@ For mechanical systems (robotic hands, gearboxes, structural assemblies), build 
 
 All dimensions are in mm (40mm → 0.4 units in 3D space).
 
-Example — robotic finger:
-1. create_component link (proximal phalanx) at position (0, 1, 0) with { length: 40, width: 10 }
-2. create_component joint (MCP joint) at position (0.4, 1, 0) with { type: "revolute", axleDiameter: 3 }
-3. create_component link (middle phalanx) at position (0.5, 1, 0) with { length: 30, width: 10 }
-4. create_component joint (PIP joint) at position (0.8, 1, 0) with { type: "revolute" }
-5. create_component link (distal phalanx) at position (0.9, 1, 0) with { length: 20, width: 8 }
+CRITICAL FOR MECHANICAL ASSEMBLIES: When building connected mechanical parts, position each component precisely relative to the previous one. Components should touch or overlap slightly at their connection points — NOT float with gaps between them.
+
+For a chain of parts (like a robotic finger):
+- First link at (0, 1.5, 0)
+- Joint immediately after: (0.4, 1.5, 0) — right at the link's end (link length 0.4)
+- Next link immediately after: (0.5, 1.5, 0) — touching the joint
+- Next joint: (0.8, 1.5, 0) — at the end of that link
+- And so on, each piece adjacent to the last
+
+The spacing between components should match their actual size. If a link is 0.4 units long, the next component starts at x + 0.4, not x + 2.0. Think of it like assembling real parts on a workbench — they connect end to end, not scattered across the room.
+
+ALWAYS specify explicit positions for every create_component call. Never omit the position parameter for mechanical parts.
+
+Example — robotic finger (correct positioning):
+1. create_component link "Proximal Phalanx" at position {x: 0, y: 1.5, z: 0} with { length: 40 } → 0.4 units long
+2. create_component joint "MCP Joint" at position {x: 0.4, y: 1.5, z: 0} → right at end of link
+3. create_component link "Middle Phalanx" at position {x: 0.5, y: 1.5, z: 0} with { length: 30 } → 0.3 units long
+4. create_component joint "PIP Joint" at position {x: 0.8, y: 1.5, z: 0} → at end of middle phalanx
+5. create_component link "Distal Phalanx" at position {x: 0.9, y: 1.5, z: 0} with { length: 20 }
 6. Connect each link to its adjacent joint using fromPort/toPort for precise attachment
 
-Position components end-to-end to form chains. Use rotation to angle joints and links correctly.
+Use rotation to angle joints and links correctly when building non-linear assemblies.
 
 You can call create_node and create_connection multiple times in a single response. Build the full system the user is describing. Always specify positions to create meaningful spatial layouts — don't rely on random placement.
 
