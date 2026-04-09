@@ -371,7 +371,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
 
     const getX = (x: number) => mirror ? (1 - x) * width : x * width;
 
-    ctx.strokeStyle = '#4a9eff';
+    ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = lineWidth;
     ctx.globalAlpha = 0.9;
 
@@ -384,7 +384,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
       ctx.stroke();
     }
 
-    ctx.fillStyle = '#4a9eff';
+    ctx.fillStyle = '#3b82f6';
     for (const lm of landmarks) {
       ctx.beginPath();
       ctx.arc(getX(lm.x), lm.y * height, pointSize, 0, Math.PI * 2);
@@ -395,7 +395,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
     const indexTip = landmarks[INDEX_TIP];
     ctx.beginPath();
     ctx.arc(getX(indexTip.x), indexTip.y * height, pointSize * 3, 0, Math.PI * 2);
-    ctx.strokeStyle = '#22c55e';
+    ctx.strokeStyle = '#60a5fa';
     ctx.lineWidth = lineWidth * 1.5;
     ctx.stroke();
 
@@ -426,8 +426,8 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
           const landmarks = results.landmarks[i];
           processLeftHand(landmarks);
 
-          // Draw on small preview canvas
-          drawHand(ctx, landmarks, canvas.width, canvas.height);
+          // Draw on small preview canvas (mirror: true for natural display)
+          drawHand(ctx, landmarks, canvas.width, canvas.height, { mirror: true });
 
           // Also draw on calibration canvas if calibrating
           if (calibrationCanvas && calibrationCtx && isCalibrating) {
@@ -542,13 +542,13 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
       style={{
         position: 'fixed',
         bottom: '100px',
-        left: '200px',
+        left: '20px',
         zIndex: 20,
         borderRadius: '12px',
         overflow: 'hidden',
-        border: '2px solid rgba(74, 158, 255, 0.4)',
-        boxShadow: '0 4px 20px rgba(74, 158, 255, 0.2)',
-        background: '#0a0a1a',
+        border: '2px solid rgba(59, 130, 246, 0.4)',
+        boxShadow: '0 4px 20px rgba(59, 130, 246, 0.2)',
+        background: '#000',
       }}
     >
       <div
@@ -557,7 +557,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
           top: '4px',
           left: '4px',
           fontSize: '8px',
-          color: '#4a9eff',
+          color: '#3b82f6',
           fontWeight: 600,
           textTransform: 'uppercase',
           letterSpacing: '0.5px',
@@ -572,8 +572,8 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
         style={{
           width: '160px',
           height: '120px',
-          transform: 'scaleX(-1)',
-          background: 'rgba(0,0,0,0.5)',
+          display: 'block',
+          background: '#000',
         }}
       />
 
@@ -585,7 +585,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
           width: '8px',
           height: '8px',
           borderRadius: '50%',
-          background: error ? '#ef4444' : isInitialized && isReady ? '#4a9eff' : '#f59e0b',
+          background: error ? '#ef4444' : isInitialized && isReady ? '#3b82f6' : '#f59e0b',
         }}
       />
 
@@ -640,7 +640,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
                   width: isNearTarget ? '80px' : '60px',
                   height: isNearTarget ? '80px' : '60px',
                   borderRadius: '50%',
-                  border: `4px solid ${isNearTarget ? '#22c55e' : '#4a9eff'}`,
+                  border: `4px solid ${isNearTarget ? '#22c55e' : '#3b82f6'}`,
                   background: isNearTarget ? 'rgba(34, 197, 94, 0.2)' : 'rgba(74, 158, 255, 0.1)',
                   transition: 'all 0.3s ease',
                   boxShadow: isNearTarget
@@ -654,7 +654,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
                     position: 'absolute',
                     inset: '20px',
                     borderRadius: '50%',
-                    background: isNearTarget ? '#22c55e' : '#4a9eff',
+                    background: isNearTarget ? '#22c55e' : '#3b82f6',
                   }}
                 />
               </div>
@@ -668,7 +668,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
                   left: `${CALIBRATION_TARGETS[currentTargetIndex].x * 100}%`,
                   top: `${CALIBRATION_TARGETS[currentTargetIndex].y * 100}%`,
                   transform: 'translate(-50%, 60px)',
-                  color: isNearTarget ? '#22c55e' : '#4a9eff',
+                  color: isNearTarget ? '#22c55e' : '#3b82f6',
                   fontSize: '18px',
                   fontWeight: 600,
                   textShadow: '0 2px 10px rgba(0,0,0,0.5)',
@@ -709,7 +709,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
           <div
             style={{
               marginTop: '30px',
-              color: isNearTarget ? '#22c55e' : '#4a9eff',
+              color: isNearTarget ? '#22c55e' : '#3b82f6',
               fontSize: '24px',
               fontWeight: 600,
               height: '36px',
@@ -739,7 +739,7 @@ export function LeftHandTracker({ enabled = true }: LeftHandTrackerProps) {
                 style={{
                   width: `${calibrationProgress}%`,
                   height: '100%',
-                  background: 'linear-gradient(90deg, #4a9eff, #22c55e)',
+                  background: 'linear-gradient(90deg, #3b82f6, #22c55e)',
                   transition: 'width 0.1s',
                 }}
               />

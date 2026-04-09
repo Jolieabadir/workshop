@@ -152,7 +152,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     });
   }, [smoothLandmarks, detectGesture, setRightHand, landmarkDistance]);
 
-  // Draw hand landmarks (green for right hand)
+  // Draw hand landmarks (pink for right hand, X-flipped for mirror display)
   const drawHand = useCallback((
     ctx: CanvasRenderingContext2D,
     landmarks: { x: number; y: number; z: number }[],
@@ -168,32 +168,35 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
       [5, 9], [9, 13], [13, 17],
     ];
 
-    ctx.strokeStyle = '#00ff88';
+    // Helper to flip X for mirror display
+    const getX = (x: number) => (1 - x) * width;
+
+    ctx.strokeStyle = '#ec4899';
     ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.8;
+    ctx.globalAlpha = 0.9;
 
     for (const [i, j] of connections) {
       const p1 = landmarks[i];
       const p2 = landmarks[j];
       ctx.beginPath();
-      ctx.moveTo(p1.x * width, p1.y * height);
-      ctx.lineTo(p2.x * width, p2.y * height);
+      ctx.moveTo(getX(p1.x), p1.y * height);
+      ctx.lineTo(getX(p2.x), p2.y * height);
       ctx.stroke();
     }
 
     // Draw points
-    ctx.fillStyle = '#00ff88';
+    ctx.fillStyle = '#ec4899';
     for (const lm of landmarks) {
       ctx.beginPath();
-      ctx.arc(lm.x * width, lm.y * height, 3, 0, Math.PI * 2);
+      ctx.arc(getX(lm.x), lm.y * height, 3, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // Highlight index finger tip
     const indexTip = landmarks[INDEX_TIP];
     ctx.beginPath();
-    ctx.arc(indexTip.x * width, indexTip.y * height, 8, 0, Math.PI * 2);
-    ctx.strokeStyle = '#ff6b9d';
+    ctx.arc(getX(indexTip.x), indexTip.y * height, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = '#f472b6';
     ctx.lineWidth = 2;
     ctx.stroke();
 

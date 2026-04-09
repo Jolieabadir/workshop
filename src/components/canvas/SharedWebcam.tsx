@@ -128,18 +128,31 @@ export function SharedWebcamProvider({ children, enabled }: SharedWebcamProvider
 
   return (
     <SharedWebcamContext.Provider value={value}>
-      {/* Video element shared by all trackers - visible for display */}
+      {/* Hidden video element for MediaPipe detection */}
+      <video
+        ref={videoRef}
+        style={{
+          position: 'fixed',
+          top: '-9999px',
+          left: '-9999px',
+          width: '640px',
+          height: '480px',
+        }}
+        playsInline
+        muted
+      />
+      {/* Right hand preview card - skeleton only on black background */}
       <div
         style={{
           position: 'fixed',
           bottom: '100px',
-          left: '20px',
+          right: '20px',
           zIndex: 20,
           borderRadius: '12px',
           overflow: 'hidden',
-          border: '2px solid rgba(255,255,255,0.2)',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-          background: '#0a0a1a',
+          border: '2px solid rgba(236, 72, 153, 0.4)',
+          boxShadow: '0 4px 20px rgba(236, 72, 153, 0.2)',
+          background: '#000',
           display: enabled ? 'block' : 'none',
         }}
       >
@@ -150,7 +163,7 @@ export function SharedWebcamProvider({ children, enabled }: SharedWebcamProvider
             top: '4px',
             left: '4px',
             fontSize: '8px',
-            color: '#00ff88',
+            color: '#ec4899',
             fontWeight: 600,
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
@@ -160,28 +173,14 @@ export function SharedWebcamProvider({ children, enabled }: SharedWebcamProvider
           Right (Interact)
         </div>
 
-        <video
-          ref={videoRef}
-          style={{
-            width: '160px',
-            height: '120px',
-            transform: 'scaleX(-1)',
-            display: 'block',
-          }}
-          playsInline
-          muted
-        />
-        {/* Canvas overlay for right hand visualization - drawn by HandTracker */}
+        {/* Canvas for right hand skeleton - drawn by HandTracker, X-flipped in drawHand */}
         <canvas
           ref={canvasRef}
           style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
             width: '160px',
             height: '120px',
-            transform: 'scaleX(-1)',
-            pointerEvents: 'none',
+            display: 'block',
+            background: '#000',
           }}
         />
         {/* Status indicator */}
@@ -193,7 +192,7 @@ export function SharedWebcamProvider({ children, enabled }: SharedWebcamProvider
             width: '8px',
             height: '8px',
             borderRadius: '50%',
-            background: error ? '#ef4444' : isReady ? '#22c55e' : '#f59e0b',
+            background: error ? '#ef4444' : isReady ? '#ec4899' : '#f59e0b',
           }}
         />
         {error && (
