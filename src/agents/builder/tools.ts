@@ -7,7 +7,7 @@ import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 export const BUILDER_TOOLS: Tool[] = [
   {
     name: 'create_node',
-    description: 'Create a node in the 3D canvas for abstract ideas, concepts, or text notes. Do NOT use this for electronic components, mechanical parts, or physical objects — use create_component for those instead.',
+    description: 'Create a text note or abstract concept on the canvas. ONLY for ideas, labels, and non-physical things. For ANY physical object, component, part, or mechanism — you MUST use create_component instead. If the thing you are creating exists in the real world or could be built/manufactured, use create_component.',
     input_schema: {
       type: 'object' as const,
       properties: {
