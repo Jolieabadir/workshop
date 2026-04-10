@@ -43,6 +43,47 @@ export const BUILDER_TOOLS: Tool[] = [
     },
   },
   {
+    name: 'create_component',
+    description: 'Create a parametric 3D component (electronic or mechanical) on the canvas. Use this for building physical objects like rockets, circuits, machines, robots, etc. Components have proper 3D geometry and connector points for wiring/assembly.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        componentType: {
+          type: 'string',
+          enum: ['resistor', 'capacitor', 'ic', 'led', 'connector', 'plate', 'shaft', 'bearing', 'bracket', 'link', 'joint', 'housing', 'gear'],
+          description: 'Type of component. Electronic: resistor, capacitor, ic (integrated circuit chip), led, connector. Mechanical: housing (box/enclosure with optional open face), plate (flat panel/fin/shield), shaft (cylindrical rod), bearing (ring with inner/outer race), gear (toothed wheel), bracket (L-shaped support), link (connecting bar), joint (pivot point).',
+        },
+        title: {
+          type: 'string',
+          description: 'Display name for the component (e.g. "Nose Cone", "Main Engine", "Flight Computer")',
+        },
+        params: {
+          type: 'object',
+          description: 'Component-specific parameters in mm. Housing: {width, height, depth, wallThickness, openFace: "none"|"top"|"front"}. Plate: {width, height, thickness, material}. Shaft: {length, diameter, type: "smooth"|"splined"|"threaded"}. Bearing: {outerDiameter, innerDiameter, width}. Gear: {toothCount, module, thickness, boreDiameter}. IC: {pinCount, label}. Connector: {pinCount, rows, type: "header"|"terminal"|"socket"}. LED: {size, color}. Resistor: {length, diameter}. Capacitor: {diameter, height, type: "electrolytic"|"ceramic"}.',
+        },
+        position: {
+          type: 'object',
+          properties: {
+            x: { type: 'number' },
+            y: { type: 'number' },
+            z: { type: 'number' },
+          },
+          description: '3D position. Stack vertically (y-axis) for assemblies.',
+        },
+        rotation: {
+          type: 'object',
+          properties: {
+            x: { type: 'number' },
+            y: { type: 'number' },
+            z: { type: 'number' },
+          },
+          description: 'Optional rotation in radians.',
+        },
+      },
+      required: ['componentType', 'title', 'params'],
+    },
+  },
+  {
     name: 'create_connection',
     description: 'Create a connection/edge between two existing nodes to show a relationship. For electronic components, use fromPort/toPort to connect at specific connector points.',
     input_schema: {
@@ -58,11 +99,11 @@ export const BUILDER_TOOLS: Tool[] = [
         },
         fromPort: {
           type: 'string',
-          description: 'Optional connector point ID on the source component (e.g. "pin1", "anode"). Required for component wiring.',
+          description: 'Optional connector point ID on the source component. Valid port IDs by component type: housing: "top", "bottom", "front", "back", "left", "right", "interior" | plate: "top", "bottom", plus "hole1", "hole2"... for hole positions | shaft: "end1", "end2" | bearing: "inner" (shaft side), "outer" (housing side), "face1", "face2" | gear: "bore" (center, for shaft), "teeth" (pitch circle, for meshing), "face1", "face2" | bracket: "base", "arm", "corner" | link: "start", "end", "pin1", "pin2" | joint: "shaft", "base" | resistor: "lead1", "lead2" | capacitor: "positive", "negative" (electrolytic) or "lead1", "lead2" (ceramic) | ic: "pin1" through "pinN" (left side first, then right) | led: "anode", "cathode" | connector: "pin1" through "pinN". ALWAYS use these exact IDs — do not invent port names.',
         },
         toPort: {
           type: 'string',
-          description: 'Optional connector point ID on the target component (e.g. "pin1", "cathode"). Required for component wiring.',
+          description: 'Optional connector point ID on the target component. Valid port IDs by component type: housing: "top", "bottom", "front", "back", "left", "right", "interior" | plate: "top", "bottom", plus "hole1", "hole2"... for hole positions | shaft: "end1", "end2" | bearing: "inner" (shaft side), "outer" (housing side), "face1", "face2" | gear: "bore" (center, for shaft), "teeth" (pitch circle, for meshing), "face1", "face2" | bracket: "base", "arm", "corner" | link: "start", "end", "pin1", "pin2" | joint: "shaft", "base" | resistor: "lead1", "lead2" | capacitor: "positive", "negative" (electrolytic) or "lead1", "lead2" (ceramic) | ic: "pin1" through "pinN" (left side first, then right) | led: "anode", "cathode" | connector: "pin1" through "pinN". ALWAYS use these exact IDs — do not invent port names.',
         },
         label: {
           type: 'string',

@@ -129,6 +129,8 @@ interface CanvasStore extends CanvasState {
   addConnection: (fromId: string, toId: string, label?: string, fromPort?: string, toPort?: string) => string;
   removeConnection: (id: string) => void;
   addGroup: (nodeIds: string[], label: string) => string;
+  moveGroup: (groupId: string, delta: Vec3) => void;
+  getGroupForNode: (nodeId: string) => CanvasGroup | null;
 
   // Badge management (for Owl and other background agents)
   addBadge: (nodeId: string, badge: Omit<Badge, 'id'>) => void;
@@ -281,6 +283,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }),
 
   addGroup: (nodeIds, label) => {
+    // Guard against empty/invalid nodeIds
+    if (!nodeIds || !Array.isArray(nodeIds) || nodeIds.length === 0) {
+      console.warn('[CANVAS] addGroup called with empty/invalid nodeIds');
+      return uid();
+    }
     const id = uid();
     // Compute center position from member nodes
     const state = get();
@@ -296,6 +303,45 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       groups: { ...s.groups, [id]: { id, label, nodeIds, position: center } },
     }));
     return id;
+  },
+
+  moveGroup: (groupId, delta) => {
+    const group = get().groups[groupId];
+    if (!group) return;
+    for (const nodeId of group.nodeIds) {
+      const node = get().nodes[nodeId];
+      if (node) {
+        get().moveNode(nodeId, {
+          x: node.position.x + delta.x,
+          y: Math.max(0.5, node.position.y + delta.y),
+          z: node.position.z + delta.z,
+        });
+      }
+    }
+    // Update the group's center position
+    set((s) => ({
+      groups: {
+        ...s.groups,
+        [groupId]: {
+          ...s.groups[groupId],
+          position: {
+            x: s.groups[groupId].position.x + delta.x,
+            y: Math.max(0.5, s.groups[groupId].position.y + delta.y),
+            z: s.groups[groupId].position.z + delta.z,
+          },
+        },
+      },
+    }));
+  },
+
+  getGroupForNode: (nodeId) => {
+    const groups = get().groups;
+    for (const group of Object.values(groups)) {
+      if (group.nodeIds.includes(nodeId)) {
+        return group;
+      }
+    }
+    return null;
   },
 
   addBadge: (nodeId, badge) => {
