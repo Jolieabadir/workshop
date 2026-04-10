@@ -6,10 +6,13 @@ import * as THREE from 'three';
 import type { CanvasConnection, CanvasNode, Vec3 } from '@/core/types';
 import { useCanvasStore } from '@/store/canvas-store';
 
+// Component scale factor (must match ComponentGenerator.tsx)
+const COMPONENT_SCALE = 10;
+
 /**
  * Get the world position for a connection endpoint.
  * If the node has a component with connectorPoints and a matching port is specified,
- * returns the connector's world position (node position + connector offset).
+ * returns the connector's world position (node position + scaled connector offset).
  * Otherwise returns the node center.
  */
 function getEndpointPosition(node: CanvasNode, portId?: string): Vec3 {
@@ -17,11 +20,12 @@ function getEndpointPosition(node: CanvasNode, portId?: string): Vec3 {
   if (portId && node.component?.connectorPoints) {
     const connector = node.component.connectorPoints.find(cp => cp.id === portId);
     if (connector) {
-      // Connector position is relative to node origin, add to get world position
+      // Connector position is relative to node origin in local coords
+      // Must multiply by COMPONENT_SCALE to match the visual rendering
       return {
-        x: node.position.x + connector.position.x,
-        y: node.position.y + connector.position.y,
-        z: node.position.z + connector.position.z,
+        x: node.position.x + connector.position.x * COMPONENT_SCALE,
+        y: node.position.y + connector.position.y * COMPONENT_SCALE,
+        z: node.position.z + connector.position.z * COMPONENT_SCALE,
       };
     }
   }
