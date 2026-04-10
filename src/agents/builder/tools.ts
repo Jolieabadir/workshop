@@ -7,19 +7,19 @@ import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 export const BUILDER_TOOLS: Tool[] = [
   {
     name: 'create_node',
-    description: 'Create a text note or abstract concept on the canvas. ONLY for ideas, labels, and non-physical things. For ANY physical object, component, part, or mechanism — you MUST use create_component instead. If the thing you are creating exists in the real world or could be built/manufactured, use create_component.',
+    description: 'Create a node on the 3D canvas. Use for ideas, concepts, labels, AND physical objects/components. Choose the shape to match what you are representing.',
     input_schema: {
       type: 'object' as const,
       properties: {
         nodeType: {
           type: 'string',
           enum: ['text_card', 'diagram', 'table', 'code_block', 'image', 'placeholder'],
-          description: 'The type of node to create. Default to text_card for most ideas.',
+          description: 'The type of node to create. Default to text_card for most things.',
         },
         shape: {
           type: 'string',
           enum: ['sphere', 'cube', 'hexagon', 'cylinder', 'torus', 'cone', 'octahedron', 'dodecahedron', 'knot', 'icosahedron'],
-          description: 'The 3D shape based on semantic meaning: sphere=concepts/abstract ideas, cube=components/concrete things, hexagon=categories/groups, cylinder=processes/flows, torus=questions/unknowns, cone=decisions/direction/funneling, octahedron=constraints/boundaries/rules, dodecahedron=complex/multifaceted concepts, knot=dependencies/entanglements/problems, icosahedron=data points/metrics/measurements.',
+          description: 'The 3D shape. For PHYSICAL OBJECTS: cube=structural/body/housing/tanks/PCB, cylinder=engines/pipes/shafts/barrels, sphere=nose cones/domes/balls/rounded parts, torus=bearings/rings/seals/wheels. For ABSTRACT IDEAS: sphere=concepts/theories, hexagon=categories/groups, cylinder=processes/flows, cone=decisions/funnels, octahedron=constraints/rules, dodecahedron=complex systems, knot=dependencies/problems, icosahedron=metrics/data.',
         },
         content: {
           type: 'string',
@@ -40,47 +40,6 @@ export const BUILDER_TOOLS: Tool[] = [
         },
       },
       required: ['nodeType', 'shape', 'content'],
-    },
-  },
-  {
-    name: 'create_component',
-    description: 'Create a realistic 3D component on the canvas. Use for electronic components (circuits) or mechanical primitives (robotic hands, gearboxes, structural assemblies).',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        componentType: {
-          type: 'string',
-          enum: ['resistor', 'capacitor', 'ic', 'led', 'connector', 'plate', 'shaft', 'bearing', 'bracket', 'link', 'joint', 'housing', 'gear'],
-          description: 'Component type. Electronic: resistor, capacitor, ic, led, connector. Mechanical: link (bar with rounded ends for limbs), joint (hinge/slider), shaft (axle), bearing (rotation), gear (power transmission), plate (flat structure), bracket (L-support), housing (enclosure).',
-        },
-        params: {
-          type: 'object',
-          description: 'Component-specific parameters. Electronic: Resistor { colorBands }, Capacitor { type }, IC { pinCount, label }, LED { color }, Connector { pinCount, rows }. Mechanical: Link { length, width, thickness }, Joint { type: "revolute"|"prismatic", axleDiameter }, Shaft { length, diameter, type: "smooth"|"threaded"|"splined" }, Bearing { outerDiameter, innerDiameter, width }, Gear { toothCount, module, thickness, boreDiameter }, Plate { width, height, thickness, material }, Bracket { width, height, depth }, Housing { width, height, depth, wallThickness, openFace }. Dimensions in mm.',
-        },
-        title: {
-          type: 'string',
-          description: 'Label for the component, e.g. "MCP Joint" or "Proximal Phalanx"',
-        },
-        position: {
-          type: 'object',
-          properties: {
-            x: { type: 'number' },
-            y: { type: 'number' },
-            z: { type: 'number' },
-          },
-          description: 'Optional 3D position. If omitted, placed near camera with random offset.',
-        },
-        rotation: {
-          type: 'object',
-          properties: {
-            x: { type: 'number' },
-            y: { type: 'number' },
-            z: { type: 'number' },
-          },
-          description: 'Rotation in radians. Use to orient components correctly in assemblies.',
-        },
-      },
-      required: ['componentType', 'title'],
     },
   },
   {

@@ -1,5 +1,6 @@
 'use client';
 
+import { useThree } from '@react-three/fiber';
 import { EffectComposer, Bloom, Vignette, N8AO } from '@react-three/postprocessing';
 
 interface PostProcessingProps {
@@ -12,7 +13,10 @@ interface PostProcessingProps {
  * Adds bloom (emissive glow), ambient occlusion (depth shadows), and vignette.
  */
 export function PostProcessing({ enabled = true }: PostProcessingProps) {
-  if (!enabled) return null;
+  const { gl } = useThree();
+
+  // Guard against WebGL context not being ready
+  if (!enabled || !gl) return null;
 
   return (
     <EffectComposer>

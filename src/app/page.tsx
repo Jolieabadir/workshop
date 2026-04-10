@@ -49,6 +49,7 @@ export default function Home() {
 
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isBuilderProcessing, setIsBuilderProcessing] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -133,8 +134,15 @@ export default function Home() {
           const utterance = finalTranscriptRef.current.trim();
           console.log('[PIPELINE] 1. SPEECH_FINAL received:', utterance);
 
+          // PAUSE MIC IMMEDIATELY to prevent TTS echo and overlapping commands
+          if (deepgramRef.current) {
+            deepgramRef.current.pause();
+            console.log('[PIPELINE] Mic paused for Builder processing');
+          }
+
           // Clear immediately to prevent double-sends
           finalTranscriptRef.current = '';
+          interimTranscriptRef.current = '';
 
           // Direct call to Builder - no middleman
           sendToBuilderRef.current(utterance, null);
@@ -191,6 +199,7 @@ export default function Home() {
 
     console.log('[PIPELINE] 2. Sending to /api/agent:', text);
     setIsProcessing(true);
+    setIsBuilderProcessing(true);
     setTranscript(text);
 
     // Get FRESH state from all stores at call time (not stale closures)
@@ -265,45 +274,56 @@ export default function Home() {
       console.log('[PIPELINE] TTS ACTIONS:', actions.filter(a => a.type === 'respond_verbally'));
 
       // Helper: Play TTS via Deepgram Aura (natural voice)
-      const speakWithDeepgram = async (text: string) => {
-        try {
-          console.log('[TTS] Calling Deepgram Aura:', text);
-          const ttsResponse = await fetch('/api/speech/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, voice: 'aura-asteria-en' }),
-          });
+      // Returns a Promise that resolves when audio finishes playing
+      const speakWithDeepgram = (text: string): Promise<void> => {
+        return new Promise((resolve) => {
+          (async () => {
+            try {
+              console.log('[TTS] Calling Deepgram Aura:', text);
+              const ttsResponse = await fetch('/api/speech/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, voice: 'aura-asteria-en' }),
+              });
 
-          if (!ttsResponse.ok) {
-            throw new Error(`TTS API error: ${ttsResponse.status}`);
-          }
+              if (!ttsResponse.ok) {
+                throw new Error(`TTS API error: ${ttsResponse.status}`);
+              }
 
-          const audioBlob = await ttsResponse.blob();
-          const audioUrl = URL.createObjectURL(audioBlob);
-          const audio = new Audio(audioUrl);
+              const audioBlob = await ttsResponse.blob();
+              const audioUrl = URL.createObjectURL(audioBlob);
+              const audio = new Audio(audioUrl);
 
-          audio.onended = () => {
-            URL.revokeObjectURL(audioUrl);
-            setIsSpeaking(false);
-          };
-          audio.onerror = () => {
-            URL.revokeObjectURL(audioUrl);
-            setIsSpeaking(false);
-          };
+              audio.onended = () => {
+                URL.revokeObjectURL(audioUrl);
+                setIsSpeaking(false);
+                console.log('[TTS] Audio playback ended');
+                resolve();
+              };
+              audio.onerror = () => {
+                URL.revokeObjectURL(audioUrl);
+                setIsSpeaking(false);
+                console.log('[TTS] Audio playback error');
+                resolve();
+              };
 
-          setIsSpeaking(true);
-          await audio.play();
-        } catch (err) {
-          console.error('[TTS] Deepgram failed, falling back to Web Speech:', err);
-          // Fallback to Web Speech API
-          const u = new SpeechSynthesisUtterance(text);
-          u.rate = 1.0;
-          window.speechSynthesis.speak(u);
-        }
+              setIsSpeaking(true);
+              await audio.play();
+            } catch (err) {
+              console.error('[TTS] Deepgram failed, falling back to Web Speech:', err);
+              // Fallback to Web Speech API
+              const u = new SpeechSynthesisUtterance(text);
+              u.rate = 1.0;
+              u.onend = () => resolve();
+              u.onerror = () => resolve();
+              window.speechSynthesis.speak(u);
+            }
+          })();
+        });
       };
 
       // Execute each action and track what was done
-      let hadTTS = false;
+      let ttsPromise: Promise<void> | null = null;
       const canvasActions: string[] = [];
 
       for (const action of actions) {
@@ -313,8 +333,7 @@ export default function Home() {
         // Handle TTS for verbal responses - use Deepgram Aura for natural voice
         if (action.type === 'respond_verbally' && action.message) {
           console.log('[PIPELINE] 5. TTS via Deepgram:', action.message);
-          speakWithDeepgram(action.message);
-          hadTTS = true;
+          ttsPromise = speakWithDeepgram(action.message);
         } else if (action.type === 'create_node') {
           canvasActions.push(`created ${action.title || 'node'}`);
         } else if (action.type === 'create_connection') {
@@ -331,10 +350,27 @@ export default function Home() {
       }
 
       // FALLBACK: If Builder didn't call respond_verbally but did canvas actions, auto-generate TTS
-      if (!hadTTS && canvasActions.length > 0) {
+      if (!ttsPromise && canvasActions.length > 0) {
         const fallbackMessage = canvasActions.join(' and ');
         console.log('[PIPELINE] 5. FALLBACK TTS:', fallbackMessage);
-        speakWithDeepgram(fallbackMessage);
+        ttsPromise = speakWithDeepgram(fallbackMessage);
+      }
+
+      // Wait for TTS to finish before resuming mic
+      if (ttsPromise) {
+        console.log('[PIPELINE] 6. Waiting for TTS to complete...');
+        await ttsPromise;
+        console.log('[PIPELINE] 6. TTS complete, resuming mic');
+      } else {
+        // No TTS - add short delay before resuming
+        console.log('[PIPELINE] 6. No TTS, adding 500ms delay before resuming');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      // Resume mic after TTS ends
+      if (deepgramRef.current && deepgramRef.current.isListening) {
+        deepgramRef.current.resume();
+        console.log('[PIPELINE] 7. Mic resumed');
       }
 
       // Log actions to Safety Supervisor
@@ -344,8 +380,15 @@ export default function Home() {
       }
     } catch (error) {
       console.error('[Builder] Failed:', error);
+      // Resume mic on error too
+      if (deepgramRef.current && deepgramRef.current.isListening) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        deepgramRef.current.resume();
+        console.log('[PIPELINE] Mic resumed after error');
+      }
     } finally {
       setIsProcessing(false);
+      setIsBuilderProcessing(false);
     }
   }, [isProcessing, setTranscript]);
 
@@ -582,14 +625,16 @@ export default function Home() {
                 width: '10px',
                 height: '10px',
                 borderRadius: '50%',
-                background: isSpeaking ? '#ff6b9d' : isListening ? '#22c55e' : '#6b7280',
-                boxShadow: isSpeaking ? '0 0 8px #ff6b9d' : isListening ? '0 0 8px #22c55e' : 'none',
-                animation: isSpeaking ? 'pulse 0.5s ease-in-out infinite' : 'none',
+                background: isBuilderProcessing ? '#f59e0b' : isSpeaking ? '#ff6b9d' : isListening ? '#22c55e' : '#6b7280',
+                boxShadow: isBuilderProcessing ? '0 0 8px #f59e0b' : isSpeaking ? '0 0 8px #ff6b9d' : isListening ? '0 0 8px #22c55e' : 'none',
+                animation: isBuilderProcessing || isSpeaking ? 'pulse 0.5s ease-in-out infinite' : 'none',
               }}
             />
             <span style={{ fontSize: '12px', color: '#9ca3af' }}>
               {micError ? (
                 <span style={{ color: '#ef4444' }}>{micError}</span>
+              ) : isBuilderProcessing && !isSpeaking ? (
+                <span style={{ color: '#f59e0b' }}>Building...</span>
               ) : isSpeaking ? (
                 <span style={{ color: '#ff6b9d' }}>Builder speaking...</span>
               ) : isListening ? (
@@ -617,8 +662,10 @@ export default function Home() {
               )}
             </span>
           </div>
-          <div style={{ fontSize: '14px', color: '#e5e7eb', minHeight: '20px' }}>
-            {transcript || 'Say something to build on the canvas...'}
+          <div style={{ fontSize: '14px', color: isBuilderProcessing ? '#9ca3af' : '#e5e7eb', minHeight: '20px' }}>
+            {isBuilderProcessing
+              ? (transcript ? `"${transcript}"` : 'Processing...')
+              : (transcript || 'Say something to build on the canvas...')}
           </div>
 
           {/* Text input for Builder agent */}

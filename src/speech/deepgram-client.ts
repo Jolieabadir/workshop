@@ -24,6 +24,7 @@ export class DeepgramClient {
   private eventSource: EventSource | null = null;
   private sessionId: string | null = null;
   private isRunning = false;
+  private isPaused = false;
 
   private onTranscript: TranscriptCallback;
   private onStatus: StatusCallback;
@@ -38,6 +39,25 @@ export class DeepgramClient {
   /** Check if microphone is currently active */
   get isListening(): boolean {
     return this.isRunning;
+  }
+
+  /** Check if audio streaming is paused */
+  get paused(): boolean {
+    return this.isPaused;
+  }
+
+  /** Pause audio streaming without tearing down the connection */
+  pause(): void {
+    if (!this.isRunning || this.isPaused) return;
+    this.isPaused = true;
+    console.log('[Deepgram] Audio streaming paused');
+  }
+
+  /** Resume audio streaming after pause */
+  resume(): void {
+    if (!this.isRunning || !this.isPaused) return;
+    this.isPaused = false;
+    console.log('[Deepgram] Audio streaming resumed');
   }
 
   /** Start capturing and streaming audio */
@@ -76,6 +96,8 @@ export class DeepgramClient {
       // Set up audio processing
       this.processor.onaudioprocess = (event) => {
         if (!this.isRunning) return;
+        // Skip sending audio when paused (prevents TTS echo and mid-processing input)
+        if (this.isPaused) return;
 
         const inputData = event.inputBuffer.getChannelData(0);
         // Convert Float32 to Int16 PCM
@@ -102,6 +124,7 @@ export class DeepgramClient {
     if (!this.isRunning) return;
 
     this.isRunning = false;
+    this.isPaused = false;
     this.cleanup();
     this.onStatus('disconnected');
   }
