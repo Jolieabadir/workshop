@@ -18,14 +18,20 @@ export interface ConnectorPoint {
 interface ConnectorProps {
   params?: ConnectorParams;
   scale?: number;
+  color?: string;  // Override for housing color
 }
 
-export function Connector({ params = {}, scale = 1 }: ConnectorProps) {
+export function Connector({ params = {}, scale = 1, color }: ConnectorProps) {
   const {
     pinCount = 8,
     rows = 2,
     type = 'header',
   } = params;
+
+  // Default colors for each type
+  const terminalColor = color || '#2d8040';
+  const socketColor = color || '#1a1a1a';
+  const headerColor = color || '#e0e0e0';
 
   const pinSpacing = 0.1; // 2.54mm standard pitch scaled
   const pinRadius = 0.015;
@@ -70,9 +76,9 @@ export function Connector({ params = {}, scale = 1 }: ConnectorProps) {
         <mesh position={[0, housingHeight / 2, 0]}>
           <boxGeometry args={[cols * terminalWidth, terminalHeight, terminalWidth]} />
           <meshPhysicalMaterial
-            color="#2a2a2a"
-            metalness={0.1}
-            roughness={0.6}
+            color={terminalColor}
+            metalness={0.05}
+            roughness={0.5}
           />
         </mesh>
 
@@ -83,9 +89,9 @@ export function Connector({ params = {}, scale = 1 }: ConnectorProps) {
             <mesh key={`screw-${i}`} position={[xPos, terminalHeight, 0]} rotation={[Math.PI / 2, 0, 0]}>
               <cylinderGeometry args={[0.025, 0.025, 0.02, 6]} />
               <meshPhysicalMaterial
-                color="#c0c0c0"
+                color="#d0d0d0"
                 metalness={0.9}
-                roughness={0.3}
+                roughness={0.2}
               />
             </mesh>
           );
@@ -117,8 +123,8 @@ export function Connector({ params = {}, scale = 1 }: ConnectorProps) {
         <mesh position={[0, housingHeight / 2, 0]}>
           <boxGeometry args={[housingWidth, housingHeight, housingDepth]} />
           <meshPhysicalMaterial
-            color="#2a2a2a"
-            metalness={0.1}
+            color={socketColor}
+            metalness={0.05}
             roughness={0.6}
           />
         </mesh>
@@ -146,9 +152,9 @@ export function Connector({ params = {}, scale = 1 }: ConnectorProps) {
           >
             <cylinderGeometry args={[pinRadius * 0.8, pinRadius * 0.8, pinHeight * 0.6, 8]} />
             <meshPhysicalMaterial
-              color="#c0c0c0"
-              metalness={0.9}
-              roughness={0.2}
+              color="#daa520"
+              metalness={0.85}
+              roughness={0.15}
             />
           </mesh>
         ))}
@@ -163,9 +169,9 @@ export function Connector({ params = {}, scale = 1 }: ConnectorProps) {
       <mesh position={[0, housingHeight / 2, 0]}>
         <boxGeometry args={[housingWidth, housingHeight, housingDepth]} />
         <meshPhysicalMaterial
-          color="#2a2a2a"
-          metalness={0.1}
-          roughness={0.6}
+          color={headerColor}
+          metalness={0.05}
+          roughness={0.5}
         />
       </mesh>
 
@@ -177,9 +183,9 @@ export function Connector({ params = {}, scale = 1 }: ConnectorProps) {
         >
           <boxGeometry args={[pinRadius * 1.5, pinHeight, pinRadius * 1.5]} />
           <meshPhysicalMaterial
-            color="#c0c0c0"
-            metalness={0.9}
-            roughness={0.2}
+            color="#daa520"
+            metalness={0.85}
+            roughness={0.15}
           />
         </mesh>
       ))}
@@ -192,9 +198,9 @@ export function Connector({ params = {}, scale = 1 }: ConnectorProps) {
         >
           <boxGeometry args={[pinRadius * 1.2, pinHeight * 0.8, pinRadius * 1.2]} />
           <meshPhysicalMaterial
-            color="#c0c0c0"
-            metalness={0.9}
-            roughness={0.2}
+            color="#daa520"
+            metalness={0.85}
+            roughness={0.15}
           />
         </mesh>
       ))}

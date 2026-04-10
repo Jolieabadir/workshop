@@ -14,18 +14,21 @@ export interface ShaftParams {
 interface ShaftProps {
   params?: ShaftParams;
   scale?: number;
+  color?: string;  // Override for shaft color (takes priority over params.color)
 }
 
 // Convert mm to Three.js units (1 unit = 100mm)
 const MM_TO_UNITS = 0.01;
 
-export function Shaft({ params = {}, scale = 1 }: ShaftProps) {
+export function Shaft({ params = {}, scale = 1, color: colorOverride }: ShaftProps) {
   const {
     length = 30,
     diameter = 5,
     type = 'smooth',
-    color = '#a0a0a0',
+    color: paramsColor = '#b0b0b0',
   } = params;
+
+  const color = colorOverride || paramsColor;
 
   // Convert to Three.js units
   const l = length * MM_TO_UNITS;
@@ -61,7 +64,7 @@ export function Shaft({ params = {}, scale = 1 }: ShaftProps) {
         <meshPhysicalMaterial
           color={color}
           metalness={0.9}
-          roughness={0.25}
+          roughness={0.15}
         />
       </mesh>
 
@@ -72,7 +75,7 @@ export function Shaft({ params = {}, scale = 1 }: ShaftProps) {
           <meshPhysicalMaterial
             color={color}
             metalness={0.9}
-            roughness={0.3}
+            roughness={0.2}
           />
         </mesh>
       ))}
@@ -88,7 +91,7 @@ export function Shaft({ params = {}, scale = 1 }: ShaftProps) {
           <meshPhysicalMaterial
             color={color}
             metalness={0.9}
-            roughness={0.25}
+            roughness={0.15}
           />
         </mesh>
       ))}

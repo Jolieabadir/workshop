@@ -14,18 +14,21 @@ export interface BearingParams {
 interface BearingProps {
   params?: BearingParams;
   scale?: number;
+  color?: string;  // Override for outer race color (takes priority over params.color)
 }
 
 // Convert mm to Three.js units (1 unit = 100mm)
 const MM_TO_UNITS = 0.01;
 
-export function Bearing({ params = {}, scale = 1 }: BearingProps) {
+export function Bearing({ params = {}, scale = 1, color: colorOverride }: BearingProps) {
   const {
     outerDiameter = 12,
     innerDiameter = 5,
     width = 4,
-    color = '#707070',
+    color: paramsColor = '#555555',  // Outer race dark steel
   } = params;
+
+  const color = colorOverride || paramsColor;
 
   // Convert to Three.js units
   const od = outerDiameter * MM_TO_UNITS;
@@ -58,7 +61,7 @@ export function Bearing({ params = {}, scale = 1 }: BearingProps) {
         <meshPhysicalMaterial
           color={color}
           metalness={0.9}
-          roughness={0.2}
+          roughness={0.15}
         />
       </mesh>
 
@@ -66,9 +69,9 @@ export function Bearing({ params = {}, scale = 1 }: BearingProps) {
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[innerRadius + ballRadius * 0.3, innerRadius + ballRadius * 0.3, w, 24]} />
         <meshPhysicalMaterial
-          color={color}
+          color="#888888"
           metalness={0.9}
-          roughness={0.2}
+          roughness={0.15}
         />
       </mesh>
 
@@ -77,9 +80,9 @@ export function Bearing({ params = {}, scale = 1 }: BearingProps) {
         <mesh key={ball.key} position={[ball.x, 0, ball.z]}>
           <sphereGeometry args={[ballRadius, 12, 12]} />
           <meshPhysicalMaterial
-            color="#a0a0a0"
-            metalness={0.95}
-            roughness={0.1}
+            color="#cccccc"
+            metalness={1.0}
+            roughness={0.05}
           />
         </mesh>
       ))}

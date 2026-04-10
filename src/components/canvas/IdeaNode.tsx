@@ -174,6 +174,7 @@ export function IdeaNode({ node }: IdeaNodeProps) {
           <ComponentGenerator
             componentType={node.component.componentType}
             params={node.component.params}
+            color={node.color}
           />
         </group>
       );

@@ -17,18 +17,19 @@ export interface BracketParams {
 interface BracketProps {
   params?: BracketParams;
   scale?: number;
+  color?: string;  // Override for bracket color (takes priority over params.color)
 }
 
 // Material properties
 const MATERIALS = {
-  aluminum: { color: '#c0c0c0', metalness: 0.9, roughness: 0.3 },
-  steel: { color: '#5a5a5a', metalness: 0.95, roughness: 0.2 },
+  aluminum: { color: '#a8b4c0', metalness: 0.85, roughness: 0.25 },
+  steel: { color: '#606068', metalness: 0.95, roughness: 0.15 },
 };
 
 // Convert mm to Three.js units (1 unit = 100mm)
 const MM_TO_UNITS = 0.01;
 
-export function Bracket({ params = {}, scale = 1 }: BracketProps) {
+export function Bracket({ params = {}, scale = 1, color: colorOverride }: BracketProps) {
   const {
     width = 30,
     height = 30,
@@ -36,7 +37,7 @@ export function Bracket({ params = {}, scale = 1 }: BracketProps) {
     flangeWidth = 2,
     holeCount = 2,
     material = 'aluminum',
-    color,
+    color: paramsColor,
   } = params;
 
   // Convert to Three.js units
@@ -46,7 +47,7 @@ export function Bracket({ params = {}, scale = 1 }: BracketProps) {
   const f = flangeWidth * MM_TO_UNITS;
 
   const materialProps = MATERIALS[material];
-  const finalColor = color || materialProps.color;
+  const finalColor = colorOverride || paramsColor || materialProps.color;
 
   // Generate holes for vertical face
   const verticalHoles = useMemo(() => {

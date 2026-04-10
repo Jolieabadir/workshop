@@ -23,6 +23,7 @@ const DEFAULT_COLOR_BANDS = ['#FFD700', '#8B00FF', '#8B4513', '#FFD700'];
 interface ResistorProps {
   params?: ResistorParams;
   scale?: number;
+  color?: string;  // Override for main body color
 }
 
 // Standard resistor color code
@@ -48,12 +49,14 @@ function parseColorBand(color: string): string {
   return RESISTOR_COLORS[color.toLowerCase()] || color;
 }
 
-export function Resistor({ params = {}, scale = 1 }: ResistorProps) {
+export function Resistor({ params = {}, scale = 1, color }: ResistorProps) {
   const {
     length = 0.4,
     diameter = 0.15,
     colorBands = DEFAULT_COLOR_BANDS,
   } = params;
+
+  const bodyColor = color || '#c4a882';  // ceramic beige default
 
   const leadLength = 0.3;
   const leadRadius = 0.015;
@@ -77,9 +80,9 @@ export function Resistor({ params = {}, scale = 1 }: ResistorProps) {
       <mesh rotation={[0, 0, Math.PI / 2]}>
         <cylinderGeometry args={[diameter / 2, diameter / 2, length, 24]} />
         <meshPhysicalMaterial
-          color="#d4a574"
-          metalness={0}
-          roughness={0.8}
+          color={bodyColor}
+          metalness={0.1}
+          roughness={0.7}
         />
       </mesh>
 

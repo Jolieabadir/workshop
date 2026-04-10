@@ -18,14 +18,19 @@ export interface ConnectorPoint {
 interface CapacitorProps {
   params?: CapacitorParams;
   scale?: number;
+  color?: string;  // Override for main body color
 }
 
-export function Capacitor({ params = {}, scale = 1 }: CapacitorProps) {
+export function Capacitor({ params = {}, scale = 1, color }: CapacitorProps) {
   const {
     height = 0.5,
     diameter = 0.25,
     type = 'electrolytic',
   } = params;
+
+  // Default colors for each type
+  const ceramicDefaultColor = '#cc8844';
+  const electrolyticDefaultColor = '#1a3a5c';
 
   const leadLength = 0.25;
   const leadRadius = 0.012;
@@ -41,9 +46,9 @@ export function Capacitor({ params = {}, scale = 1 }: CapacitorProps) {
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[discRadius, discRadius, discThickness, 24]} />
           <meshPhysicalMaterial
-            color="#d4a574"
-            metalness={0}
-            roughness={0.7}
+            color={color || ceramicDefaultColor}
+            metalness={0.05}
+            roughness={0.6}
           />
         </mesh>
 
@@ -79,8 +84,8 @@ export function Capacitor({ params = {}, scale = 1 }: CapacitorProps) {
       <mesh position={[0, height / 2, 0]}>
         <cylinderGeometry args={[bodyRadius, bodyRadius, height, 24]} />
         <meshPhysicalMaterial
-          color="#1a1a2e"
-          metalness={0.2}
+          color={color || electrolyticDefaultColor}
+          metalness={0.15}
           roughness={0.5}
         />
       </mesh>
@@ -95,13 +100,13 @@ export function Capacitor({ params = {}, scale = 1 }: CapacitorProps) {
         />
       </mesh>
 
-      {/* Polarity stripe (white/gray) */}
+      {/* Polarity stripe (lighter blue) */}
       <mesh position={[-bodyRadius * 0.85, height / 2, 0]} rotation={[0, 0, Math.PI / 2]}>
         <boxGeometry args={[height * 0.8, 0.02, 0.04]} />
         <meshPhysicalMaterial
-          color="#e0e0e0"
-          metalness={0}
-          roughness={0.8}
+          color="#4488bb"
+          metalness={0.1}
+          roughness={0.6}
         />
       </mesh>
 

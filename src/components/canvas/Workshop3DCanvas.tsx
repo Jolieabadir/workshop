@@ -2,7 +2,7 @@
 
 import { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Stars, Grid } from '@react-three/drei';
+import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
 import { useCanvasStore } from '@/store/canvas-store';
@@ -90,21 +90,21 @@ function SceneContent() {
   return (
     <>
       {/* Scene background color (Three.js level, not CSS) */}
-      <color attach="background" args={['#1a1820']} />
+      <color attach="background" args={['#e8e8f0']} />
+      <fog attach="fog" args={['#e8e8f0', 20, 60]} />
 
       {/* Environment */}
-      <ambientLight intensity={0.2} />
-      <directionalLight position={[10, 10, 5]} intensity={0.8} />
-      <Stars radius={100} depth={50} count={2000} factor={4} fade speed={1} />
+      <ambientLight intensity={0.7} />
+      <directionalLight position={[10, 10, 5]} intensity={1.0} />
       <Grid
         position={[0, -1, 0]}
         args={[40, 40]}
         cellSize={1}
         cellThickness={0.5}
-        cellColor="#221e2a"
+        cellColor="#c0c0d0"
         sectionSize={4}
         sectionThickness={1}
-        sectionColor="#2e2838"
+        sectionColor="#a0a0b8"
         fadeDistance={30}
         infiniteGrid
       />
@@ -139,11 +139,11 @@ function SceneContent() {
 
 export function Workshop3DCanvas() {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#1a1820' }}>
+    <div style={{ position: 'fixed', inset: 0, background: '#e8e8f0' }}>
       <Canvas
         camera={{ position: [0, 3, 8], fov: 60 }}
         gl={{ antialias: true, alpha: false }}
-        style={{ background: '#1a1820' }}
+        style={{ background: '#e8e8f0' }}
       >
         <SceneContent />
       </Canvas>

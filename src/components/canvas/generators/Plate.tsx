@@ -22,26 +22,27 @@ export interface PlateParams {
 interface PlateProps {
   params?: PlateParams;
   scale?: number;
+  color?: string;  // Override for plate color (takes priority over params.color)
 }
 
 // Material properties
 const MATERIALS = {
-  aluminum: { color: '#c0c0c0', metalness: 0.9, roughness: 0.3 },
-  steel: { color: '#4a4a4a', metalness: 0.95, roughness: 0.2 },
-  plastic: { color: '#2a2a2a', metalness: 0.1, roughness: 0.6 },
+  aluminum: { color: '#b8c4d0', metalness: 0.85, roughness: 0.25 },
+  steel: { color: '#707070', metalness: 0.95, roughness: 0.15 },
+  plastic: { color: '#2d5a27', metalness: 0.05, roughness: 0.5 },  // PCB green as default
 };
 
 // Convert mm to Three.js units (1 unit = 100mm)
 const MM_TO_UNITS = 0.01;
 
-export function Plate({ params = {}, scale = 1 }: PlateProps) {
+export function Plate({ params = {}, scale = 1, color: colorOverride }: PlateProps) {
   const {
     width = 40,
     height = 20,
     thickness = 3,
     holePositions = [],
     material = 'aluminum',
-    color,
+    color: paramsColor,
   } = params;
 
   // Convert to Three.js units
@@ -50,7 +51,7 @@ export function Plate({ params = {}, scale = 1 }: PlateProps) {
   const t = thickness * MM_TO_UNITS;
 
   const materialProps = MATERIALS[material];
-  const finalColor = color || materialProps.color;
+  const finalColor = colorOverride || paramsColor || materialProps.color;
 
   // Generate hole meshes
   const holes = useMemo(() => {

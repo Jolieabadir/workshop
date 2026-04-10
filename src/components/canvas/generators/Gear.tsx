@@ -16,19 +16,22 @@ export interface GearParams {
 interface GearProps {
   params?: GearParams;
   scale?: number;
+  color?: string;  // Override for gear color (takes priority over params.color)
 }
 
 // Convert mm to Three.js units (1 unit = 100mm)
 const MM_TO_UNITS = 0.01;
 
-export function Gear({ params = {}, scale = 1 }: GearProps) {
+export function Gear({ params = {}, scale = 1, color: colorOverride }: GearProps) {
   const {
     toothCount = 12,
     module = 1,
     thickness = 3,
     boreDiameter = 3,
-    color = '#808080',
+    color: paramsColor = '#888888',
   } = params;
+
+  const color = colorOverride || paramsColor;
 
   // Gear dimensions
   // Pitch diameter = module * toothCount
@@ -101,7 +104,7 @@ export function Gear({ params = {}, scale = 1 }: GearProps) {
         <meshPhysicalMaterial
           color={color}
           metalness={0.9}
-          roughness={0.25}
+          roughness={0.2}
         />
       </mesh>
 
@@ -111,7 +114,7 @@ export function Gear({ params = {}, scale = 1 }: GearProps) {
         <meshPhysicalMaterial
           color={color}
           metalness={0.9}
-          roughness={0.25}
+          roughness={0.2}
         />
       </mesh>
 

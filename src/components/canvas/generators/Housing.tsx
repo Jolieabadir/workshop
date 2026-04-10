@@ -17,19 +17,20 @@ export interface HousingParams {
 interface HousingProps {
   params?: HousingParams;
   scale?: number;
+  color?: string;  // Override for housing color (takes priority over params.color)
 }
 
 // Material properties
 const MATERIALS = {
-  aluminum: { color: '#c0c0c0', metalness: 0.9, roughness: 0.3 },
-  steel: { color: '#5a5a5a', metalness: 0.95, roughness: 0.2 },
-  plastic: { color: '#2a2a2a', metalness: 0.1, roughness: 0.6 },
+  aluminum: { color: '#a8b4c0', metalness: 0.85, roughness: 0.25 },
+  steel: { color: '#606068', metalness: 0.95, roughness: 0.15 },
+  plastic: { color: '#2a2a3a', metalness: 0.05, roughness: 0.5 },  // Dark gray with blue tint
 };
 
 // Convert mm to Three.js units (1 unit = 100mm)
 const MM_TO_UNITS = 0.01;
 
-export function Housing({ params = {}, scale = 1 }: HousingProps) {
+export function Housing({ params = {}, scale = 1, color: colorOverride }: HousingProps) {
   const {
     width = 30,
     height = 30,
@@ -37,7 +38,7 @@ export function Housing({ params = {}, scale = 1 }: HousingProps) {
     wallThickness = 2,
     openFace = 'top',
     material = 'aluminum',
-    color,
+    color: paramsColor,
   } = params;
 
   // Convert to Three.js units
@@ -47,7 +48,7 @@ export function Housing({ params = {}, scale = 1 }: HousingProps) {
   const t = wallThickness * MM_TO_UNITS;
 
   const materialProps = MATERIALS[material];
-  const finalColor = color || materialProps.color;
+  const finalColor = colorOverride || paramsColor || materialProps.color;
 
   // Interior dimensions
   const innerW = w - t * 2;
@@ -120,10 +121,10 @@ export function Housing({ params = {}, scale = 1 }: HousingProps) {
         </mesh>
       )}
 
-      {/* Interior darkness */}
+      {/* Interior (slightly lighter so you can see inside) */}
       <mesh position={[0, 0, 0]}>
         <boxGeometry args={[innerW - 0.002, innerH - 0.002, innerD - 0.002]} />
-        <meshBasicMaterial color="#0a0a0a" />
+        <meshBasicMaterial color="#3a3a4a" />
       </mesh>
     </group>
   );

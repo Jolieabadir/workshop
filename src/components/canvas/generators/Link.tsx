@@ -16,26 +16,27 @@ export interface LinkParams {
 interface LinkProps {
   params?: LinkParams;
   scale?: number;
+  color?: string;  // Override for link color (takes priority over params.color)
 }
 
 // Material properties
 const MATERIALS = {
-  aluminum: { color: '#c0c0c0', metalness: 0.9, roughness: 0.3 },
-  steel: { color: '#5a5a5a', metalness: 0.95, roughness: 0.2 },
-  plastic: { color: '#2a2a2a', metalness: 0.1, roughness: 0.6 },
+  aluminum: { color: '#b0bcc8', metalness: 0.85, roughness: 0.25 },
+  steel: { color: '#707078', metalness: 0.95, roughness: 0.15 },
+  plastic: { color: '#3a3a3a', metalness: 0.05, roughness: 0.5 },
 };
 
 // Convert mm to Three.js units (1 unit = 100mm)
 const MM_TO_UNITS = 0.01;
 
-export function Link({ params = {}, scale = 1 }: LinkProps) {
+export function Link({ params = {}, scale = 1, color: colorOverride }: LinkProps) {
   const {
     length = 40,
     width = 10,
     thickness = 3,
     holeAtEnds = true,
     material = 'aluminum',
-    color,
+    color: paramsColor,
   } = params;
 
   // Convert to Three.js units
@@ -44,7 +45,7 @@ export function Link({ params = {}, scale = 1 }: LinkProps) {
   const t = thickness * MM_TO_UNITS;
 
   const materialProps = MATERIALS[material];
-  const finalColor = color || materialProps.color;
+  const finalColor = colorOverride || paramsColor || materialProps.color;
 
   // End cap radius (half of width for rounded ends)
   const endRadius = w / 2;

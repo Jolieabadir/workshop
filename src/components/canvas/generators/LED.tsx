@@ -17,15 +17,16 @@ export interface ConnectorPoint {
 interface LEDProps {
   params?: LEDParams;
   scale?: number;
+  color?: string;  // Override for LED color (takes priority over params.color)
 }
 
 // Parse color - handles both hex and named colors
 function parseColor(color: string): string {
   const namedColors: Record<string, string> = {
-    red: '#ff0000',
-    green: '#00ff00',
-    blue: '#0000ff',
-    yellow: '#ffff00',
+    red: '#ff2200',
+    green: '#00ff44',
+    blue: '#0066ff',
+    yellow: '#ffee00',
     orange: '#ff6600',
     white: '#ffffff',
     amber: '#ffbf00',
@@ -38,14 +39,14 @@ function parseColor(color: string): string {
   return namedColors[color.toLowerCase()] || '#ff0000';
 }
 
-export function LED({ params = {}, scale = 1 }: LEDProps) {
+export function LED({ params = {}, scale = 1, color: colorOverride }: LEDProps) {
   const {
-    color = '#ff0000',
+    color: paramsColor = '#ff0000',
     size = 0.15,
     shape = 'round',
   } = params;
 
-  const ledColor = parseColor(color);
+  const ledColor = parseColor(colorOverride || paramsColor);
   const baseHeight = 0.08;
   const baseRadius = size * 0.8;
   const domeRadius = size;
@@ -66,10 +67,10 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
           <meshPhysicalMaterial
             color={ledColor}
             emissive={ledColor}
-            emissiveIntensity={0.8}
+            emissiveIntensity={1.5}
             transparent
-            opacity={0.85}
-            transmission={0.3}
+            opacity={0.9}
+            transmission={0.2}
           />
         </mesh>
 
@@ -79,10 +80,10 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
           <meshPhysicalMaterial
             color={ledColor}
             emissive={ledColor}
-            emissiveIntensity={1.0}
+            emissiveIntensity={2.0}
             transparent
-            opacity={0.9}
-            transmission={0.4}
+            opacity={0.95}
+            transmission={0.3}
           />
         </mesh>
 
@@ -92,7 +93,7 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
           <meshPhysicalMaterial
             color="#c0c0c0"
             metalness={0.9}
-            roughness={0.2}
+            roughness={0.15}
           />
         </mesh>
 
@@ -102,7 +103,7 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
           <meshPhysicalMaterial
             color="#c0c0c0"
             metalness={0.9}
-            roughness={0.2}
+            roughness={0.15}
           />
         </mesh>
       </group>
@@ -116,12 +117,9 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
       <mesh position={[0, baseHeight / 2, 0]}>
         <cylinderGeometry args={[baseRadius, baseRadius, baseHeight, 24]} />
         <meshPhysicalMaterial
-          color={ledColor}
-          emissive={ledColor}
-          emissiveIntensity={0.5}
-          transparent
-          opacity={0.8}
-          transmission={0.3}
+          color="#999999"
+          metalness={0.1}
+          roughness={0.5}
         />
       </mesh>
 
@@ -131,10 +129,10 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
         <meshPhysicalMaterial
           color={ledColor}
           emissive={ledColor}
-          emissiveIntensity={0.8}
+          emissiveIntensity={1.5}
           transparent
-          opacity={0.85}
-          transmission={0.4}
+          opacity={0.9}
+          transmission={0.3}
         />
       </mesh>
 
@@ -142,9 +140,9 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
       <mesh position={[baseRadius * 0.9, baseHeight / 2, 0]} rotation={[0, 0, Math.PI / 2]}>
         <boxGeometry args={[baseHeight * 0.8, 0.01, baseRadius * 0.3]} />
         <meshPhysicalMaterial
-          color="#333333"
+          color="#666666"
           metalness={0}
-          roughness={0.8}
+          roughness={0.7}
         />
       </mesh>
 
@@ -154,7 +152,7 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
         <meshPhysicalMaterial
           color="#c0c0c0"
           metalness={0.9}
-          roughness={0.2}
+          roughness={0.15}
         />
       </mesh>
 
@@ -164,7 +162,7 @@ export function LED({ params = {}, scale = 1 }: LEDProps) {
         <meshPhysicalMaterial
           color="#c0c0c0"
           metalness={0.9}
-          roughness={0.2}
+          roughness={0.15}
         />
       </mesh>
     </group>

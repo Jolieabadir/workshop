@@ -16,19 +16,22 @@ export interface JointParams {
 interface JointProps {
   params?: JointParams;
   scale?: number;
+  color?: string;  // Override for joint color (takes priority over params.color)
 }
 
 // Convert mm to Three.js units (1 unit = 100mm)
 const MM_TO_UNITS = 0.01;
 
-export function Joint({ params = {}, scale = 1 }: JointProps) {
+export function Joint({ params = {}, scale = 1, color: colorOverride }: JointProps) {
   const {
     type = 'revolute',
     axleDiameter = 3,
     flangeWidth = 8,
     flangeHeight = 12,
-    color = '#707070',
+    color: paramsColor = '#777777',
   } = params;
+
+  const color = colorOverride || paramsColor;
 
   // Convert to Three.js units
   const axleR = (axleDiameter / 2) * MM_TO_UNITS;
@@ -61,9 +64,9 @@ export function Joint({ params = {}, scale = 1 }: JointProps) {
         <mesh position={[0, railHeight / 2 + sliderHeight / 2, 0]}>
           <boxGeometry args={[sliderWidth, sliderHeight, railWidth * 1.5]} />
           <meshPhysicalMaterial
-            color="#909090"
-            metalness={0.85}
-            roughness={0.3}
+            color="#888888"
+            metalness={0.9}
+            roughness={0.2}
           />
         </mesh>
 
@@ -107,9 +110,9 @@ export function Joint({ params = {}, scale = 1 }: JointProps) {
       <mesh rotation={[0, 0, Math.PI / 2]}>
         <cylinderGeometry args={[axleR, axleR, gap + flangeThickness * 2 + 0.01, 16]} />
         <meshPhysicalMaterial
-          color="#a0a0a0"
+          color="#cccccc"
           metalness={0.95}
-          roughness={0.15}
+          roughness={0.1}
         />
       </mesh>
 

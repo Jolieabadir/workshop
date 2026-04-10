@@ -20,15 +20,18 @@ export interface ConnectorPoint {
 interface ICProps {
   params?: ICParams;
   scale?: number;
+  color?: string;  // Override for main body color
 }
 
-export function IC({ params = {}, scale = 1 }: ICProps) {
+export function IC({ params = {}, scale = 1, color }: ICProps) {
   const {
     pinCount = 8,
     bodyWidth = 0.3,
     bodyLength = 0.6,
     label = '',
   } = params;
+
+  const bodyColor = color || '#1a1a1a';  // black epoxy default
 
   const bodyHeight = 0.1;
   const pinWidth = 0.02;
@@ -72,7 +75,7 @@ export function IC({ params = {}, scale = 1 }: ICProps) {
       <mesh position={[0, bodyHeight / 2, 0]}>
         <boxGeometry args={[bodyWidth, bodyHeight, bodyLength]} />
         <meshPhysicalMaterial
-          color="#1a1a1a"
+          color={bodyColor}
           metalness={0.3}
           roughness={0.4}
         />
@@ -97,9 +100,9 @@ export function IC({ params = {}, scale = 1 }: ICProps) {
         >
           <boxGeometry args={[pinLength, pinHeight, pinWidth]} />
           <meshPhysicalMaterial
-            color="#c0c0c0"
-            metalness={0.9}
-            roughness={0.2}
+            color="#d0d0d0"
+            metalness={0.95}
+            roughness={0.15}
           />
         </mesh>
       ))}
@@ -116,9 +119,9 @@ export function IC({ params = {}, scale = 1 }: ICProps) {
         >
           <boxGeometry args={[pinWidth, pinLength, pinWidth]} />
           <meshPhysicalMaterial
-            color="#c0c0c0"
-            metalness={0.9}
-            roughness={0.2}
+            color="#d0d0d0"
+            metalness={0.95}
+            roughness={0.15}
           />
         </mesh>
       ))}

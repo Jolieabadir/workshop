@@ -35,6 +35,7 @@ export interface ComponentGeneratorProps {
   componentType: ComponentType;
   params?: Record<string, unknown>;
   scale?: number;
+  color?: string;  // Optional color override from node.color
 }
 
 // Scale multiplier to make mm-based components visible in scene
@@ -51,62 +52,62 @@ const COMPONENT_SCALE = 10;
  * All components are wrapped in a 10x scale group so they're visible
  * alongside regular nodes (which are ~1.2 units wide).
  */
-export function ComponentGenerator({ componentType, params = {}, scale = 1 }: ComponentGeneratorProps) {
+export function ComponentGenerator({ componentType, params = {}, scale = 1, color }: ComponentGeneratorProps) {
   let component: React.ReactNode;
 
   switch (componentType) {
     // Electronic components
     case 'resistor':
-      component = <Resistor params={params as ResistorParams} scale={scale} />;
+      component = <Resistor params={params as ResistorParams} scale={scale} color={color} />;
       break;
 
     case 'capacitor':
-      component = <Capacitor params={params as CapacitorParams} scale={scale} />;
+      component = <Capacitor params={params as CapacitorParams} scale={scale} color={color} />;
       break;
 
     case 'ic':
-      component = <IC params={params as ICParams} scale={scale} />;
+      component = <IC params={params as ICParams} scale={scale} color={color} />;
       break;
 
     case 'led':
-      component = <LED params={params as LEDParams} scale={scale} />;
+      component = <LED params={params as LEDParams} scale={scale} color={color} />;
       break;
 
     case 'connector':
-      component = <Connector params={params as ConnectorParams} scale={scale} />;
+      component = <Connector params={params as ConnectorParams} scale={scale} color={color} />;
       break;
 
     // Mechanical primitives
     case 'plate':
-      component = <Plate params={params as PlateParams} scale={scale} />;
+      component = <Plate params={params as PlateParams} scale={scale} color={color} />;
       break;
 
     case 'shaft':
-      component = <Shaft params={params as ShaftParams} scale={scale} />;
+      component = <Shaft params={params as ShaftParams} scale={scale} color={color} />;
       break;
 
     case 'bearing':
-      component = <Bearing params={params as BearingParams} scale={scale} />;
+      component = <Bearing params={params as BearingParams} scale={scale} color={color} />;
       break;
 
     case 'bracket':
-      component = <Bracket params={params as BracketParams} scale={scale} />;
+      component = <Bracket params={params as BracketParams} scale={scale} color={color} />;
       break;
 
     case 'link':
-      component = <Link params={params as LinkParams} scale={scale} />;
+      component = <Link params={params as LinkParams} scale={scale} color={color} />;
       break;
 
     case 'joint':
-      component = <Joint params={params as JointParams} scale={scale} />;
+      component = <Joint params={params as JointParams} scale={scale} color={color} />;
       break;
 
     case 'housing':
-      component = <Housing params={params as HousingParams} scale={scale} />;
+      component = <Housing params={params as HousingParams} scale={scale} color={color} />;
       break;
 
     case 'gear':
-      component = <Gear params={params as GearParams} scale={scale} />;
+      component = <Gear params={params as GearParams} scale={scale} color={color} />;
       break;
 
     default:
@@ -114,7 +115,7 @@ export function ComponentGenerator({ componentType, params = {}, scale = 1 }: Co
       component = (
         <mesh>
           <boxGeometry args={[0.3, 0.3, 0.3]} />
-          <meshStandardMaterial color="#888888" />
+          <meshStandardMaterial color={color || "#888888"} />
         </mesh>
       );
   }
