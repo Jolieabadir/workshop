@@ -413,14 +413,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const store = get();
     switch (action.type) {
       case 'create_node':
-        // Pass placement context if available (e.g., connected node ID)
-        store.addNode(
-          action.nodeType,
-          action.content,
-          action.title,
-          action.position,
-          action.shape,
-          action.connectedToId ? { connectedToId: action.connectedToId } : undefined
+        // Redirect to component creation (create_node is deprecated)
+        store.addComponent(
+          'housing',
+          { width: 30, height: 20, depth: 15, wallThickness: 2, openFace: 'none' },
+          action.title || action.content?.slice(0, 30) || 'Untitled',
+          action.position
         );
         break;
       case 'create_component':

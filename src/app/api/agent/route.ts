@@ -62,17 +62,36 @@ export async function POST(request: NextRequest) {
     let iterations = 0;
     const MAX_ITERATIONS = 5; // Safety limit
 
+    const MAX_RETRIES = 2;
+
     while (continueLoop && iterations < MAX_ITERATIONS) {
       iterations++;
 
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: BUILDER_SYSTEM_PROMPT,
-        tools: BUILDER_TOOLS,
-        tool_choice: { type: 'auto' },
-        messages,
-      });
+      // Retry logic for overloaded errors (529)
+      let response: Anthropic.Message | undefined;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          response = await anthropic.messages.create({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 4096,
+            system: BUILDER_SYSTEM_PROMPT,
+            tools: BUILDER_TOOLS,
+            tool_choice: { type: 'auto' },
+            messages,
+          });
+          break; // Success, exit retry loop
+        } catch (err: unknown) {
+          const isOverloaded = err instanceof Error &&
+            (err.message.includes('529') || err.message.includes('Overloaded'));
+          if (isOverloaded && attempt < MAX_RETRIES) {
+            console.warn(`[AGENT API] Overloaded, retrying in ${(attempt + 1) * 2}s...`);
+            await new Promise(r => setTimeout(r, (attempt + 1) * 2000));
+            continue;
+          }
+          throw err; // Not overloaded or out of retries
+        }
+      }
+      if (!response) throw new Error('Failed after retries');
 
       console.log(`[AGENT API] Round ${iterations} - blocks: ${response.content.length}, stop_reason: ${response.stop_reason}`);
 

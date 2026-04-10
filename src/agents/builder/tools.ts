@@ -6,43 +6,6 @@ import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 
 export const BUILDER_TOOLS: Tool[] = [
   {
-    name: 'create_node',
-    description: 'Create a node on the 3D canvas. Use for ideas, concepts, labels, AND physical objects/components. Choose the shape to match what you are representing.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        nodeType: {
-          type: 'string',
-          enum: ['text_card', 'diagram', 'table', 'code_block', 'image', 'placeholder'],
-          description: 'The type of node to create. Default to text_card for most things.',
-        },
-        shape: {
-          type: 'string',
-          enum: ['sphere', 'cube', 'hexagon', 'cylinder', 'torus', 'cone', 'octahedron', 'dodecahedron', 'knot', 'icosahedron'],
-          description: 'The 3D shape. For PHYSICAL OBJECTS: cube=structural/body/housing/tanks/PCB, cylinder=engines/pipes/shafts/barrels, sphere=nose cones/domes/balls/rounded parts, torus=bearings/rings/seals/wheels. For ABSTRACT IDEAS: sphere=concepts/theories, hexagon=categories/groups, cylinder=processes/flows, cone=decisions/funnels, octahedron=constraints/rules, dodecahedron=complex systems, knot=dependencies/problems, icosahedron=metrics/data.',
-        },
-        content: {
-          type: 'string',
-          description: 'The main content/body of the node.',
-        },
-        title: {
-          type: 'string',
-          description: 'Optional short title for the node.',
-        },
-        position: {
-          type: 'object',
-          properties: {
-            x: { type: 'number' },
-            y: { type: 'number' },
-            z: { type: 'number' },
-          },
-          description: 'Optional 3D position. If omitted, placed near camera with random offset.',
-        },
-      },
-      required: ['nodeType', 'shape', 'content'],
-    },
-  },
-  {
     name: 'create_component',
     description: 'Create a parametric 3D component (electronic or mechanical) on the canvas. Use this for building physical objects like rockets, circuits, machines, robots, etc. Components have proper 3D geometry and connector points for wiring/assembly.',
     input_schema: {

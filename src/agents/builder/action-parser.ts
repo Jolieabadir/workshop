@@ -224,12 +224,12 @@ export function formatIntentContext(intent: IntentData, state: CanvasState): str
 export function parseToolCallToAction(toolName: string, toolInput: Record<string, unknown>): BuilderAction | null {
   switch (toolName) {
     case 'create_node':
+      // Fallback: convert create_node calls to housing components
       return {
-        type: 'create_node',
-        nodeType: (toolInput.nodeType as NodeType) || 'text_card',
-        shape: (toolInput.shape as NodeShape) || 'sphere',
-        content: toolInput.content as string,
-        title: toolInput.title as string | undefined,
+        type: 'create_component',
+        componentType: 'housing' as ComponentType,
+        params: { width: 30, height: 20, depth: 15, wallThickness: 2, openFace: 'none' },
+        title: (toolInput.title as string) || (toolInput.content as string) || 'Untitled',
         position: toolInput.position as Vec3 | undefined,
       };
 

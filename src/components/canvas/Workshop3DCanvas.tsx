@@ -12,7 +12,6 @@ import { ConnectionLine } from './ConnectionLine';
 import { BuilderAvatar } from './BuilderAvatar';
 import { HandCursor } from './HandCursor';
 import { SpatialEngine } from './SpatialEngine';
-import { PostProcessing } from './PostProcessing';
 
 // Smoothing factor for camera movement (lower = smoother)
 const CAMERA_SMOOTHING = 0.04;
@@ -110,12 +109,12 @@ function SceneContent() {
       />
 
       {/* Idea nodes */}
-      {Object.values(nodes).map((node) => (
+      {Object.values(nodes).filter(Boolean).map((node) => (
         <IdeaNode key={node.id} node={node} />
       ))}
 
       {/* Connections */}
-      {Object.values(connections).map((conn) => (
+      {Object.values(connections).filter(Boolean).map((conn) => (
         <ConnectionLine key={conn.id} connection={conn} />
       ))}
 
@@ -130,9 +129,6 @@ function SceneContent() {
 
       {/* Camera controls (responds to left hand) */}
       <HandControlledOrbitControls />
-
-      {/* Post-processing effects (bloom, ambient occlusion, vignette) */}
-      <PostProcessing />
     </>
   );
 }
