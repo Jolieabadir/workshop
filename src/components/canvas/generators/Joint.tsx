@@ -150,12 +150,12 @@ export function getJointConnectorPoints(params: JointParams = {}): ConnectorPoin
     const railLength = 0.08;
     return [
       {
-        id: 'rail_end1',
+        id: 'input',
         position: { x: -railLength / 2, y: 0, z: 0 },
         direction: { x: -1, y: 0, z: 0 },
       },
       {
-        id: 'rail_end2',
+        id: 'output',
         position: { x: railLength / 2, y: 0, z: 0 },
         direction: { x: 1, y: 0, z: 0 },
       },
@@ -169,15 +169,15 @@ export function getJointConnectorPoints(params: JointParams = {}): ConnectorPoin
 
   // Revolute joint connectors
   return [
-    // Link attachment on left side
+    // Input side (left flange)
     {
-      id: 'link1',
+      id: 'input',
       position: { x: -gap / 2 - flangeThickness, y: 0, z: 0 },
       direction: { x: -1, y: 0, z: 0 },
     },
-    // Link attachment on right side
+    // Output side (right flange)
     {
-      id: 'link2',
+      id: 'output',
       position: { x: gap / 2 + flangeThickness, y: 0, z: 0 },
       direction: { x: 1, y: 0, z: 0 },
     },

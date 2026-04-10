@@ -105,15 +105,15 @@ export function getBearingConnectorPoints(params: BearingParams = {}): Connector
   const w = width * MM_TO_UNITS;
 
   return [
-    // Inner shaft attachment
+    // Inner race (shaft attachment)
     {
-      id: 'shaft',
+      id: 'inner',
       position: { x: 0, y: 0, z: 0 },
       direction: { x: 0, y: 1, z: 0 },
     },
-    // Outer housing attachment
+    // Outer race (housing attachment)
     {
-      id: 'housing',
+      id: 'outer',
       position: { x: 0, y: 0, z: 0 },
       direction: { x: 0, y: -1, z: 0 },
     },

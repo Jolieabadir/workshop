@@ -135,11 +135,17 @@ export function getGearConnectorPoints(params: GearParams = {}): ConnectorPoint[
   const t = thickness * MM_TO_UNITS;
 
   return [
-    // Shaft bore (center)
+    // Center bore (for shaft attachment)
     {
-      id: 'shaft',
+      id: 'bore',
       position: { x: 0, y: 0, z: 0 },
       direction: { x: 0, y: 1, z: 0 },
+    },
+    // Teeth (pitch circle for meshing with another gear)
+    {
+      id: 'teeth',
+      position: { x: pitchDiameter / 2, y: 0, z: 0 },
+      direction: { x: 1, y: 0, z: 0 },
     },
     // Face 1 (top)
     {
@@ -152,12 +158,6 @@ export function getGearConnectorPoints(params: GearParams = {}): ConnectorPoint[
       id: 'face2',
       position: { x: 0, y: -t / 2, z: 0 },
       direction: { x: 0, y: -1, z: 0 },
-    },
-    // Pitch circle (for meshing with another gear)
-    {
-      id: 'pitch',
-      position: { x: pitchDiameter / 2, y: 0, z: 0 },
-      direction: { x: 1, y: 0, z: 0 },
     },
   ];
 }

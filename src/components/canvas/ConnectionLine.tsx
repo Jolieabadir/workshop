@@ -43,9 +43,9 @@ const CONNECTION_CONFIG = {
 
 // Wire configuration for electronic component connections
 const WIRE_CONFIG = {
-  color: '#888888',         // Neutral wire gray
+  color: '#aaaaaa',         // Neutral wire gray
   lineWidth: 1.0,           // Thin wire
-  curveOffset: 0.1,         // Tighter bezier curve for more direct wires
+  curveOffset: 0.05,        // Nearly straight wires between components
 };
 
 interface ConnectionLineProps {

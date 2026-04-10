@@ -97,23 +97,23 @@ Example: "build an LED circuit" should use:
 - create_connection for wires between them
 
 CONNECTOR POINTS FOR WIRING:
-When connecting components, specify fromPort and toPort to attach wires at the correct terminals. Each component type has named connector points:
+When connecting components, ALWAYS specify fromPort and toPort. Each component has named connector points:
 - Resistor: "lead1", "lead2"
-- Capacitor: "lead1", "lead2" (ceramic) or "positive", "negative" (electrolytic)
-- IC: "pin1" through "pinN" (numbered by pin count)
+- Capacitor: "positive", "negative"
+- IC: "pin1" through "pinN"
 - LED: "anode", "cathode"
-- Connector: "pin1" through "pinN"
-- Link: "pin1", "pin2" (hole centers) or "end1", "end2" (tips)
-- Joint: "link1", "link2", "axle" (revolute) or "rail_end1", "rail_end2", "slider" (prismatic)
+- Link: "start", "end"
+- Joint: "input", "output"
 - Shaft: "end1", "end2"
-- Gear: "shaft", "face1", "face2", "pitch"
-- Bearing: "shaft", "housing", "face1", "face2"
+- Gear: "bore", "teeth"
+- Bearing: "inner", "outer"
+- Connector: "pin1" through "pinN"
+- Housing: "front", "back", "top", "bottom", "left", "right"
+- Bracket: "face1", "face2"
 - Plate: "top", "bottom"
-- Bracket: "vertical_face", "horizontal_face"
-- Housing: "top", "bottom", "front", "back", "left", "right", "interior"
 
-Example: connect resistor lead2 to LED anode:
-create_connection({ fromId: "resistor_id", toId: "led_id", fromPort: "lead2", toPort: "anode" })
+Example: connect resistor to LED:
+create_connection({ fromId: "r1", toId: "led1", fromPort: "lead2", toPort: "anode" })
 
 MECHANICAL PRIMITIVES:
 For mechanical systems (robotic hands, gearboxes, structural assemblies), build from mechanical primitives using create_component:
@@ -166,6 +166,16 @@ Example — robotic finger (correct positioning):
 6. Connect each link to its adjacent joint using fromPort/toPort for precise attachment
 
 Use rotation to angle joints and links correctly when building non-linear assemblies.
+
+ASSEMBLY GROUPING (CRITICAL):
+After creating a set of connected components that form a single mechanical or electronic assembly, ALWAYS call group_nodes to group them together. This allows the user to grab and move the entire assembly as one unit.
+
+Examples:
+- After building a robotic finger with 3 links and 2 joints → group_nodes(["link1_id", "joint1_id", "link2_id", "joint2_id", "link3_id"], "Index Finger Assembly")
+- After building an LED circuit with resistor, LED, and wires → group_nodes(["resistor_id", "led_id", "power_id"], "LED Circuit")
+- After building a gear train with 3 gears and 2 shafts → group_nodes(["gear1_id", "shaft1_id", "gear2_id", "shaft2_id", "gear3_id"], "Gear Train Assembly")
+
+The label should be descriptive, like "Index Finger Assembly", "LED Driver Circuit", or "Cooling System". Never skip the group_nodes call after creating a multi-component assembly.
 
 You can call create_node and create_connection multiple times in a single response. Build the full system the user is describing. Always specify positions to create meaningful spatial layouts — don't rely on random placement.
 

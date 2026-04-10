@@ -77,68 +77,42 @@ import { getGearConnectorPoints } from './Gear';
 import type { ConnectorPoint } from './Resistor';
 import type { ComponentType } from './ComponentGenerator';
 
-// Must match COMPONENT_SCALE in ComponentGenerator.tsx
-const COMPONENT_SCALE = 10;
-
 export function getConnectorPointsForComponent(
   componentType: ComponentType,
   params: Record<string, unknown> = {}
 ): ConnectorPoint[] {
-  let points: ConnectorPoint[];
-
+  // Connector points are returned in local component coordinates.
+  // ConnectionLine.tsx handles scaling by COMPONENT_SCALE when computing world positions.
   switch (componentType) {
     // Electronic components
     case 'resistor':
-      points = getResistorConnectorPoints(params);
-      break;
+      return getResistorConnectorPoints(params);
     case 'capacitor':
-      points = getCapacitorConnectorPoints(params);
-      break;
+      return getCapacitorConnectorPoints(params);
     case 'ic':
-      points = getICConnectorPoints(params);
-      break;
+      return getICConnectorPoints(params);
     case 'led':
-      points = getLEDConnectorPoints(params);
-      break;
+      return getLEDConnectorPoints(params);
     case 'connector':
-      points = getConnectorConnectorPoints(params);
-      break;
+      return getConnectorConnectorPoints(params);
     // Mechanical primitives
     case 'plate':
-      points = getPlateConnectorPoints(params);
-      break;
+      return getPlateConnectorPoints(params);
     case 'shaft':
-      points = getShaftConnectorPoints(params);
-      break;
+      return getShaftConnectorPoints(params);
     case 'bearing':
-      points = getBearingConnectorPoints(params);
-      break;
+      return getBearingConnectorPoints(params);
     case 'bracket':
-      points = getBracketConnectorPoints(params);
-      break;
+      return getBracketConnectorPoints(params);
     case 'link':
-      points = getLinkConnectorPoints(params);
-      break;
+      return getLinkConnectorPoints(params);
     case 'joint':
-      points = getJointConnectorPoints(params);
-      break;
+      return getJointConnectorPoints(params);
     case 'housing':
-      points = getHousingConnectorPoints(params);
-      break;
+      return getHousingConnectorPoints(params);
     case 'gear':
-      points = getGearConnectorPoints(params);
-      break;
+      return getGearConnectorPoints(params);
     default:
       return [];
   }
-
-  // Scale connector point positions to match the 10x component scale
-  return points.map(point => ({
-    ...point,
-    position: {
-      x: point.position.x * COMPONENT_SCALE,
-      y: point.position.y * COMPONENT_SCALE,
-      z: point.position.z * COMPONENT_SCALE,
-    },
-  }));
 }

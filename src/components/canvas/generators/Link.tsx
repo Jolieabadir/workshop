@@ -123,7 +123,18 @@ export function getLinkConnectorPoints(params: LinkParams = {}): ConnectorPoint[
   const straightLength = l - w;
 
   return [
-    // Pin holes at each end
+    // End connectors (at the tips of the rounded ends)
+    {
+      id: 'start',
+      position: { x: -l / 2, y: 0, z: 0 },
+      direction: { x: -1, y: 0, z: 0 },
+    },
+    {
+      id: 'end',
+      position: { x: l / 2, y: 0, z: 0 },
+      direction: { x: 1, y: 0, z: 0 },
+    },
+    // Pin holes at each end (for axle connections)
     {
       id: 'pin1',
       position: { x: -straightLength / 2, y: 0, z: 0 },
@@ -132,17 +143,6 @@ export function getLinkConnectorPoints(params: LinkParams = {}): ConnectorPoint[
     {
       id: 'pin2',
       position: { x: straightLength / 2, y: 0, z: 0 },
-      direction: { x: 1, y: 0, z: 0 },
-    },
-    // End faces
-    {
-      id: 'end1',
-      position: { x: -l / 2, y: 0, z: 0 },
-      direction: { x: -1, y: 0, z: 0 },
-    },
-    {
-      id: 'end2',
-      position: { x: l / 2, y: 0, z: 0 },
       direction: { x: 1, y: 0, z: 0 },
     },
   ];

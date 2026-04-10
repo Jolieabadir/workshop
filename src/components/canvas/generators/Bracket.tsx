@@ -130,15 +130,15 @@ export function getBracketConnectorPoints(params: BracketParams = {}): Connector
   const f = flangeWidth * MM_TO_UNITS;
 
   const points: ConnectorPoint[] = [
-    // Vertical face
+    // Vertical face (face1)
     {
-      id: 'vertical_face',
+      id: 'face1',
       position: { x: 0, y: h / 2, z: -d / 2 },
       direction: { x: 0, y: 0, z: -1 },
     },
-    // Horizontal face
+    // Horizontal face (face2)
     {
-      id: 'horizontal_face',
+      id: 'face2',
       position: { x: 0, y: 0, z: 0 },
       direction: { x: 0, y: -1, z: 0 },
     },
@@ -148,14 +148,14 @@ export function getBracketConnectorPoints(params: BracketParams = {}): Connector
   for (let i = 0; i < holeCount; i++) {
     const vY = (h / (holeCount + 1)) * (i + 1);
     points.push({
-      id: `vhole${i + 1}`,
+      id: `hole${i * 2 + 1}`,
       position: { x: 0, y: vY, z: -d / 2 + f },
       direction: { x: 0, y: 0, z: -1 },
     });
 
     const hZ = (d / (holeCount + 1)) * (i + 1) - d / 2;
     points.push({
-      id: `hhole${i + 1}`,
+      id: `hole${i * 2 + 2}`,
       position: { x: 0, y: f, z: hZ },
       direction: { x: 0, y: 1, z: 0 },
     });
