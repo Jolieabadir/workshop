@@ -73,7 +73,7 @@ export function SpatialEngine() {
       }
     }
 
-    // Apply adjustments to nodes that need to move
+    // Apply repulsion adjustments to nodes that need to move
     for (const [nodeId, adj] of adjustments) {
       // Skip tiny movements
       if (Math.abs(adj.x) < 0.0001 && Math.abs(adj.y) < 0.0001 && Math.abs(adj.z) < 0.0001) {
@@ -88,6 +88,48 @@ export function SpatialEngine() {
         y: Math.max(0.5, node.position.y + adj.y), // Keep above ground
         z: node.position.z + adj.z,
       });
+    }
+
+    // ATTRACTION: Pull connected nodes toward each other
+    const connections = Object.values(useCanvasStore.getState().connections);
+
+    for (const conn of connections) {
+      const nodeA = nodes[conn.fromId];
+      const nodeB = nodes[conn.toId];
+      if (!nodeA || !nodeB) continue;
+
+      // Skip if either node is grabbed
+      if (nodeA.id === grabbedNodeId || nodeB.id === grabbedNodeId) continue;
+
+      const dx = nodeB.position.x - nodeA.position.x;
+      const dy = nodeB.position.y - nodeA.position.y;
+      const dz = nodeB.position.z - nodeA.position.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      // Use tighter distance and stronger attraction for component connections
+      const isComponentConnection = nodeA.component && nodeB.component;
+      const idealDist = isComponentConnection ? 2.0 : 3.0;
+      const strength = isComponentConnection ? 0.02 : 0.01;
+
+      // Only attract if nodes are further than ideal distance
+      if (dist > idealDist && dist > 0.001) {
+        const excess = dist - idealDist;
+        const pullX = (dx / dist) * excess * strength;
+        const pullY = (dy / dist) * excess * strength;
+        const pullZ = (dz / dist) * excess * strength;
+
+        // Pull both nodes toward each other
+        moveNode(nodeA.id, {
+          x: nodeA.position.x + pullX,
+          y: Math.max(0.5, nodeA.position.y + pullY),
+          z: nodeA.position.z + pullZ,
+        });
+        moveNode(nodeB.id, {
+          x: nodeB.position.x - pullX,
+          y: Math.max(0.5, nodeB.position.y - pullY),
+          z: nodeB.position.z - pullZ,
+        });
+      }
     }
   });
 

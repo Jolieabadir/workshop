@@ -114,12 +114,16 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   // Animation: gentle float + hover pulse
   useFrame((_, delta) => {
     if (meshRef.current) {
-      // Gentle floating animation
-      const floatOffset = Math.sin(Date.now() * 0.001 + node.position.x * 2) * 0.02;
-      meshRef.current.position.y = node.position.y + floatOffset;
+      // Only apply floating and rotation to non-component nodes
+      // Components need to stay oriented correctly (resistor horizontal, IC flat, etc.)
+      if (!node.component) {
+        // Gentle floating animation
+        const floatOffset = Math.sin(Date.now() * 0.001 + node.position.x * 2) * 0.02;
+        meshRef.current.position.y = node.position.y + floatOffset;
 
-      // Slow rotation
-      meshRef.current.rotation.y += delta * 0.1;
+        // Slow rotation
+        meshRef.current.rotation.y += delta * 0.1;
+      }
     }
 
     if (materialRef.current) {
