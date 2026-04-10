@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useHandStore } from '@/store/hand-store';
 import { useCanvasStore } from '@/store/canvas-store';
+import type { Vec3 } from '@/core/types';
 
 // Gesture colors for the cursor
 const GESTURE_COLORS: Record<string, THREE.Color> = {
@@ -32,6 +33,9 @@ export function HandCursor() {
 
   // Smoothed cursor position for visual smoothness
   const smoothedPos = useRef(new THREE.Vector3(0, 2, 5));
+
+  // Previous grab position for calculating delta when moving groups
+  const prevGrabPosRef = useRef<Vec3 | null>(null);
 
   useFrame((_, delta) => {
     if (!meshRef.current || !glowRef.current) return;
@@ -119,25 +123,46 @@ export function HandCursor() {
       if (!grabbedNodeId && hoveredNodeId) {
         handStore.setGrabbedNode(hoveredNodeId);
         canvasStore.pushFocus(hoveredNodeId);
+        // Initialize previous grab position
+        const worldPos = camera.position.clone().add(
+          raycasterRef.current.ray.direction.clone().multiplyScalar(INTERACTION_DEPTH)
+        );
+        prevGrabPosRef.current = { x: worldPos.x, y: worldPos.y, z: worldPos.z };
         console.log('[HandCursor] GRABBED:', hoveredNodeId);
       }
-      // If already grabbing, move the node
+      // If already grabbing, move the node (or group)
       else if (grabbedNodeId) {
         // Calculate world position at INTERACTION_DEPTH along ray
         const worldPos = camera.position.clone().add(
           raycasterRef.current.ray.direction.clone().multiplyScalar(INTERACTION_DEPTH)
         );
-        canvasStore.moveNode(grabbedNodeId, {
-          x: worldPos.x,
-          y: Math.max(0.5, worldPos.y), // Keep above ground
-          z: worldPos.z,
-        });
+
+        // Check if node belongs to a group
+        const group = canvasStore.getGroupForNode(grabbedNodeId);
+        if (group && prevGrabPosRef.current) {
+          // Calculate delta and move entire group
+          const delta = {
+            x: worldPos.x - prevGrabPosRef.current.x,
+            y: worldPos.y - prevGrabPosRef.current.y,
+            z: worldPos.z - prevGrabPosRef.current.z,
+          };
+          canvasStore.moveGroup(group.id, delta);
+        } else {
+          // Move single node
+          canvasStore.moveNode(grabbedNodeId, {
+            x: worldPos.x,
+            y: Math.max(0.5, worldPos.y), // Keep above ground
+            z: worldPos.z,
+          });
+        }
+        prevGrabPosRef.current = { x: worldPos.x, y: worldPos.y, z: worldPos.z };
       }
     } else {
       // Not pinching - release any grabbed node
       if (grabbedNodeId) {
         console.log('[HandCursor] RELEASED:', grabbedNodeId);
         handStore.setGrabbedNode(null);
+        prevGrabPosRef.current = null;
       }
     }
 

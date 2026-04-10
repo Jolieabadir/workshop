@@ -24,11 +24,27 @@ const PUSH_STRENGTH = 0.02;   // Gentle push per frame (not instant snap)
 export function SpatialEngine() {
   useFrame(() => {
     const nodes = useCanvasStore.getState().nodes;
+    const groups = useCanvasStore.getState().groups;
     const moveNode = useCanvasStore.getState().moveNode;
     const grabbedNodeId = useHandStore.getState().grabbedNodeId;
 
     const nodeList = Object.values(nodes);
     if (nodeList.length < 2) return;
+
+    // Build a map of nodeId -> groupId for quick lookup
+    const nodeToGroup = new Map<string, string>();
+    for (const group of Object.values(groups)) {
+      for (const nodeId of group.nodeIds) {
+        nodeToGroup.set(nodeId, group.id);
+      }
+    }
+
+    // Helper to check if two nodes share a group
+    const shareGroup = (nodeA: string, nodeB: string): boolean => {
+      const groupA = nodeToGroup.get(nodeA);
+      const groupB = nodeToGroup.get(nodeB);
+      return groupA !== undefined && groupA === groupB;
+    };
 
     // Track which nodes need to move and by how much
     const adjustments = new Map<string, { x: number; y: number; z: number }>();
@@ -38,6 +54,9 @@ export function SpatialEngine() {
       for (let j = i + 1; j < nodeList.length; j++) {
         const nodeA = nodeList[i];
         const nodeB = nodeList[j];
+
+        // Skip repulsion for nodes within the same group (assembly)
+        if (shareGroup(nodeA.id, nodeB.id)) continue;
 
         // Calculate distance between nodes
         const dx = nodeB.position.x - nodeA.position.x;

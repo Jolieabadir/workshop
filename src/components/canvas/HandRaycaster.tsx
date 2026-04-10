@@ -43,6 +43,8 @@ export function HandRaycaster() {
   // Canvas store actions
   const nodes = useCanvasStore((s) => s.nodes);
   const moveNode = useCanvasStore((s) => s.moveNode);
+  const moveGroup = useCanvasStore((s) => s.moveGroup);
+  const getGroupForNode = useCanvasStore((s) => s.getGroupForNode);
   const updateNode = useCanvasStore((s) => s.updateNode);
   const pushFocus = useCanvasStore((s) => s.pushFocus);
   const focusStack = useCanvasStore((s) => s.focusStack);
@@ -123,12 +125,23 @@ export function HandRaycaster() {
         const node = nodes[grabbedNodeId];
         if (node && prevDragPosRef.current) {
           const delta = hitPoint.clone().sub(prevDragPosRef.current);
-          const newPos = {
-            x: node.position.x + delta.x,
-            y: Math.max(0.5, node.position.y + delta.y),
-            z: node.position.z + delta.z,
+          const deltaVec = {
+            x: delta.x,
+            y: delta.y,
+            z: delta.z,
           };
-          moveNode(grabbedNodeId, newPos);
+          // Check if node belongs to a group - move entire group if so
+          const group = getGroupForNode(grabbedNodeId);
+          if (group) {
+            moveGroup(group.id, deltaVec);
+          } else {
+            const newPos = {
+              x: node.position.x + delta.x,
+              y: Math.max(0.5, node.position.y + delta.y),
+              z: node.position.z + delta.z,
+            };
+            moveNode(grabbedNodeId, newPos);
+          }
         }
         prevDragPosRef.current = hitPoint;
       } else if (grabbedNodeId && !hitPoint) {
@@ -141,12 +154,23 @@ export function HandRaycaster() {
 
           if (rayPoint && prevDragPosRef.current) {
             const delta = rayPoint.clone().sub(prevDragPosRef.current);
-            const newPos = {
-              x: node.position.x + delta.x * 0.5,
-              y: Math.max(0.5, node.position.y + delta.y * 0.5),
-              z: node.position.z,
+            const deltaVec = {
+              x: delta.x * 0.5,
+              y: delta.y * 0.5,
+              z: 0,
             };
-            moveNode(grabbedNodeId, newPos);
+            // Check if node belongs to a group - move entire group if so
+            const group = getGroupForNode(grabbedNodeId);
+            if (group) {
+              moveGroup(group.id, deltaVec);
+            } else {
+              const newPos = {
+                x: node.position.x + delta.x * 0.5,
+                y: Math.max(0.5, node.position.y + delta.y * 0.5),
+                z: node.position.z,
+              };
+              moveNode(grabbedNodeId, newPos);
+            }
           }
           prevDragPosRef.current = rayPoint;
         }
