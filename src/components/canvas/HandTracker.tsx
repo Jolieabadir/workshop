@@ -92,6 +92,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
+  const [isCalibrated, setIsCalibrated] = useState(false);
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [currentTargetIndex, setCurrentTargetIndex] = useState(0);
   const [isNearTarget, setIsNearTarget] = useState(false);
@@ -107,6 +108,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
     calibratedRangeRef.current = null;
     calibrationRef.current = null;
     setIsCalibrating(false);
+    setIsCalibrated(false);
     setCalibrationProgress(0);
     setCurrentTargetIndex(0);
     setIsNearTarget(false);
@@ -287,6 +289,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
 
         calibrationRef.current = null;
         setIsCalibrating(false);
+        setIsCalibrated(true);
         setCalibrationProgress(100);
         setCurrentTargetIndex(0);
         setIsNearTarget(false);
@@ -494,7 +497,7 @@ export function HandTracker({ enabled = true }: HandTrackerProps) {
   }, [enabled, isInitialized, isReady, videoRef, setTracking, processResults, reset]);
 
   // Render recalibration hint when calibrated but not calibrating
-  if (!isCalibrating && calibratedRangeRef.current) {
+  if (!isCalibrating && isCalibrated) {
     return (
       <div
         style={{

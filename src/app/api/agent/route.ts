@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     // Multi-round tool calling loop
     // Claude returns tool calls, we send back results, Claude makes more calls
-    let messages: Anthropic.MessageParam[] = [
+    const messages: Anthropic.MessageParam[] = [
       { role: 'user', content: userMessage },
     ];
 
