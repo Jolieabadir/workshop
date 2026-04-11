@@ -32,12 +32,139 @@ function parseColor(color: string | undefined, fallback: string): THREE.Color {
   }
 }
 
-// Component to render a loaded GLB mesh
-function LoadedMesh({ url }: { url: string }) {
-  const { scene } = useGLTF(url);
-  // Clone the scene to avoid issues with multiple instances
-  const clonedScene = useMemo(() => scene.clone(), [scene]);
-  return <primitive object={clonedScene} scale={[2, 2, 2]} />;
+// Target size for loaded meshes (fits in roughly 2x2x2 units)
+const TARGET_MESH_SIZE = 2;
+const MAX_TEXTURE_SIZE = 1024;
+
+// Optimize and auto-scale a loaded GLB scene
+function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; scale: number } {
+  let triangleCount = 0;
+  let texturesProcessed = 0;
+  let materialsSimplified = 0;
+
+  // Traverse and optimize
+  scene.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      // Count triangles
+      const geometry = child.geometry;
+      if (geometry.index) {
+        triangleCount += geometry.index.count / 3;
+      } else if (geometry.attributes.position) {
+        triangleCount += geometry.attributes.position.count / 3;
+      }
+
+      // Simplify materials
+      if (child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((mat) => {
+          if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
+            // Simplify by reducing texture usage
+            if (mat.map && mat.map.image) {
+              const img = mat.map.image as { width?: number; height?: number };
+              if ((img.width && img.width > MAX_TEXTURE_SIZE) || (img.height && img.height > MAX_TEXTURE_SIZE)) {
+                mat.map.dispose();
+                mat.map = null;
+                texturesProcessed++;
+              }
+            }
+            // Remove heavy maps
+            if (mat.normalMap) { mat.normalMap.dispose(); mat.normalMap = null; }
+            if (mat.roughnessMap) { mat.roughnessMap.dispose(); mat.roughnessMap = null; }
+            if (mat.metalnessMap) { mat.metalnessMap.dispose(); mat.metalnessMap = null; }
+            if (mat.aoMap) { mat.aoMap.dispose(); mat.aoMap = null; }
+            materialsSimplified++;
+          }
+        });
+      }
+    }
+  });
+
+  // Compute bounding box and scale to fit target size
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const maxDimension = Math.max(size.x, size.y, size.z);
+  const scale = maxDimension > 0 ? TARGET_MESH_SIZE / maxDimension : 1;
+
+  // Center the scene
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  scene.position.sub(center.multiplyScalar(scale));
+
+  console.log(`[MESH] Optimized: ${triangleCount.toLocaleString()} triangles, ${texturesProcessed} textures removed, ${materialsSimplified} materials simplified, scale: ${scale.toFixed(3)}`);
+
+  return { scene, scale };
+}
+
+// Error fallback box for failed mesh loads
+function MeshErrorFallback({ title, color }: { title?: string; color: string }) {
+  return (
+    <mesh>
+      <boxGeometry args={[1.5, 1.5, 1.5]} />
+      <meshStandardMaterial color={color} opacity={0.7} transparent />
+    </mesh>
+  );
+}
+
+// Component to render a loaded GLB mesh with optimization and error handling
+function LoadedMesh({ url, title, color }: { url: string; title?: string; color: string }) {
+  const [error, setError] = useState(false);
+  const [optimizedScene, setOptimizedScene] = useState<{ scene: THREE.Object3D; scale: number } | null>(null);
+
+  // Load the GLB
+  const gltf = useGLTF(url);
+
+  // Optimize on load
+  useEffect(() => {
+    if (gltf.scene && !error) {
+      try {
+        const cloned = gltf.scene.clone();
+        const result = optimizeAndScaleScene(cloned);
+        setOptimizedScene(result);
+      } catch (e) {
+        console.error('[MESH] Optimization failed:', e);
+        setError(true);
+      }
+    }
+  }, [gltf.scene, error]);
+
+  // Handle loading errors
+  if (error || !optimizedScene) {
+    if (error) {
+      return <MeshErrorFallback title={title} color={color} />;
+    }
+    // Still optimizing
+    return <MeshLoadingPlaceholder />;
+  }
+
+  return (
+    <primitive
+      object={optimizedScene.scene}
+      scale={[optimizedScene.scale, optimizedScene.scale, optimizedScene.scale]}
+    />
+  );
+}
+
+// Wrapper with error boundary behavior
+function SafeLoadedMesh({ url, title, color }: { url: string; title?: string; color: string }) {
+  const [hasError, setHasError] = useState(false);
+
+  // Reset error state if URL changes
+  useEffect(() => {
+    setHasError(false);
+  }, [url]);
+
+  if (hasError) {
+    return <MeshErrorFallback title={title} color={color} />;
+  }
+
+  try {
+    return <LoadedMesh url={url} title={title} color={color} />;
+  } catch (e) {
+    console.error('[MESH] Render error:', e);
+    setHasError(true);
+    return <MeshErrorFallback title={title} color={color} />;
+  }
 }
 
 // Wireframe placeholder for loading meshes (with pulsing animation)
@@ -195,9 +322,9 @@ export function IdeaNode({ node }: IdeaNodeProps) {
 
   // Render the appropriate 3D shape based on node.shape (type determines color, shape determines geometry)
   const renderShape = () => {
-    // If node has a loaded GLB mesh, render it
+    // If node has a loaded GLB mesh, render it with error handling
     if (node.meshUrl) {
-      return <LoadedMesh url={node.meshUrl} />;
+      return <SafeLoadedMesh url={node.meshUrl} title={node.title} color={node.color || TYPE_COLORS[node.type]} />;
     }
 
     // If mesh is loading, show wireframe placeholder

@@ -138,8 +138,23 @@ export function Workshop3DCanvas() {
     <div style={{ position: 'fixed', inset: 0, background: '#e8e8f0' }}>
       <Canvas
         camera={{ position: [0, 3, 8], fov: 60 }}
-        gl={{ antialias: true, alpha: false }}
+        gl={{
+          antialias: true,
+          alpha: false,
+          powerPreference: 'default',
+          failIfMajorPerformanceCaveat: false,
+        }}
         style={{ background: '#e8e8f0' }}
+        onCreated={({ gl }) => {
+          // Handle WebGL context loss gracefully
+          gl.domElement.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            console.warn('[WebGL] Context lost, attempting recovery...');
+          });
+          gl.domElement.addEventListener('webglcontextrestored', () => {
+            console.log('[WebGL] Context restored');
+          });
+        }}
       >
         <SceneContent />
       </Canvas>
