@@ -374,6 +374,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             if (status.status === 'SUCCEEDED' && status.modelUrl) {
               // Proxy through our API to avoid CORS issues
               const proxiedUrl = `/api/mesh?url=${encodeURIComponent(status.modelUrl)}`;
+              console.log('[CANVAS] Mesh ready, raw URL:', status.modelUrl);
+              console.log('[CANVAS] Mesh ready, proxied URL:', proxiedUrl);
               markSuccess(proxiedUrl);
             } else if (status.status === 'FAILED') {
               markError(status.error || 'Mesh generation failed');

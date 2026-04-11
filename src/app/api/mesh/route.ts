@@ -129,6 +129,7 @@ export async function GET(request: Request): Promise<NextResponse | Response> {
 async function handleGlbProxy(url: string): Promise<Response> {
   // Validate URL is from Meshy assets
   if (!url.startsWith('https://assets.meshy.ai/')) {
+    console.error('[MESH API] Invalid proxy URL:', url);
     return NextResponse.json(
       { error: 'Invalid URL', message: 'Only Meshy asset URLs are allowed' },
       { status: 400 }
@@ -136,29 +137,28 @@ async function handleGlbProxy(url: string): Promise<Response> {
   }
 
   try {
+    console.log('[MESH API] Proxying GLB from:', url);
     const response = await fetch(url);
 
     if (!response.ok) {
+      console.error('[MESH API] Failed to fetch GLB:', response.status);
       return NextResponse.json(
         { error: 'Failed to fetch GLB', message: `${response.status}` },
         { status: response.status }
       );
     }
 
-    // Stream the GLB binary data back to the client
-    const headers = new Headers();
-    headers.set('Content-Type', 'model/gltf-binary');
-    headers.set('Access-Control-Allow-Origin', '*');
+    // Read the full binary data (more reliable than streaming in Next.js)
+    const arrayBuffer = await response.arrayBuffer();
+    console.log('[MESH API] GLB fetched, size:', arrayBuffer.byteLength);
 
-    // Pass through content-length if available
-    const contentLength = response.headers.get('content-length');
-    if (contentLength) {
-      headers.set('Content-Length', contentLength);
-    }
-
-    return new Response(response.body, {
+    return new NextResponse(arrayBuffer, {
       status: 200,
-      headers,
+      headers: {
+        'Content-Type': 'model/gltf-binary',
+        'Access-Control-Allow-Origin': '*',
+        'Content-Length': String(arrayBuffer.byteLength),
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
