@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { Html, RoundedBox, useGLTF } from '@react-three/drei';
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
@@ -34,50 +35,103 @@ function parseColor(color: string | undefined, fallback: string): THREE.Color {
 
 // Target size for loaded meshes (fits in roughly 2x2x2 units)
 const TARGET_MESH_SIZE = 2;
-const MAX_TEXTURE_SIZE = 1024;
+const MAX_TRIANGLES_PER_MESH = 5000;
 
-// Optimize and auto-scale a loaded GLB scene
+// Extract color from material, falling back to gray
+function extractMaterialColor(material: THREE.Material): THREE.Color {
+  if (material instanceof THREE.MeshStandardMaterial ||
+      material instanceof THREE.MeshPhysicalMaterial ||
+      material instanceof THREE.MeshBasicMaterial ||
+      material instanceof THREE.MeshLambertMaterial ||
+      material instanceof THREE.MeshPhongMaterial) {
+    return material.color.clone();
+  }
+  return new THREE.Color(0x888888);
+}
+
+// Aggressively optimize a loaded GLB scene to prevent WebGL crashes
 function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; scale: number } {
-  let triangleCount = 0;
-  let texturesProcessed = 0;
-  let materialsSimplified = 0;
+  let originalTriangles = 0;
+  let finalTriangles = 0;
+  let meshesSimplified = 0;
+  let meshesKept = 0;
 
-  // Traverse and optimize
+  // First pass: count triangles and collect meshes to process
+  const meshesToProcess: THREE.Mesh[] = [];
   scene.traverse((child) => {
     if (child instanceof THREE.Mesh) {
-      // Count triangles
-      const geometry = child.geometry;
-      if (geometry.index) {
-        triangleCount += geometry.index.count / 3;
-      } else if (geometry.attributes.position) {
-        triangleCount += geometry.attributes.position.count / 3;
-      }
-
-      // Simplify materials
-      if (child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((mat) => {
-          if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
-            // Simplify by reducing texture usage
-            if (mat.map && mat.map.image) {
-              const img = mat.map.image as { width?: number; height?: number };
-              if ((img.width && img.width > MAX_TEXTURE_SIZE) || (img.height && img.height > MAX_TEXTURE_SIZE)) {
-                mat.map.dispose();
-                mat.map = null;
-                texturesProcessed++;
-              }
-            }
-            // Remove heavy maps
-            if (mat.normalMap) { mat.normalMap.dispose(); mat.normalMap = null; }
-            if (mat.roughnessMap) { mat.roughnessMap.dispose(); mat.roughnessMap = null; }
-            if (mat.metalnessMap) { mat.metalnessMap.dispose(); mat.metalnessMap = null; }
-            if (mat.aoMap) { mat.aoMap.dispose(); mat.aoMap = null; }
-            materialsSimplified++;
-          }
-        });
-      }
+      meshesToProcess.push(child);
     }
   });
+
+  // Process each mesh
+  for (const mesh of meshesToProcess) {
+    const geometry = mesh.geometry;
+    let triCount = 0;
+
+    if (geometry.index) {
+      triCount = geometry.index.count / 3;
+    } else if (geometry.attributes.position) {
+      triCount = geometry.attributes.position.count / 3;
+    }
+
+    originalTriangles += triCount;
+
+    // Extract color before disposing material
+    let color = new THREE.Color(0x888888);
+    if (mesh.material) {
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      if (materials.length > 0) {
+        color = extractMaterialColor(materials[0]);
+      }
+      // Dispose ALL textures and old materials
+      materials.forEach((mat) => {
+        if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
+          if (mat.map) { mat.map.dispose(); }
+          if (mat.normalMap) { mat.normalMap.dispose(); }
+          if (mat.roughnessMap) { mat.roughnessMap.dispose(); }
+          if (mat.metalnessMap) { mat.metalnessMap.dispose(); }
+          if (mat.aoMap) { mat.aoMap.dispose(); }
+          if (mat.emissiveMap) { mat.emissiveMap.dispose(); }
+        }
+        mat.dispose();
+      });
+    }
+
+    // Replace material with simple colored material (NO textures)
+    mesh.material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.7,
+      metalness: 0.1,
+    });
+
+    // If mesh is too heavy, replace geometry with bounding box approximation
+    if (triCount > MAX_TRIANGLES_PER_MESH) {
+      // Get bounding box of original mesh
+      geometry.computeBoundingBox();
+      const bbox = geometry.boundingBox;
+      if (bbox) {
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+
+        // Dispose original heavy geometry
+        geometry.dispose();
+
+        // Replace with simple box geometry
+        const simpleGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
+        mesh.geometry = simpleGeo;
+        mesh.position.add(center);
+
+        finalTriangles += 12; // Box has 12 triangles
+        meshesSimplified++;
+      }
+    } else {
+      finalTriangles += triCount;
+      meshesKept++;
+    }
+  }
 
   // Compute bounding box and scale to fit target size
   const box = new THREE.Box3().setFromObject(scene);
@@ -91,13 +145,13 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
   box.getCenter(center);
   scene.position.sub(center.multiplyScalar(scale));
 
-  console.log(`[MESH] Optimized: ${triangleCount.toLocaleString()} triangles, ${texturesProcessed} textures removed, ${materialsSimplified} materials simplified, scale: ${scale.toFixed(3)}`);
+  console.log(`[MESH] Optimized: ${originalTriangles.toLocaleString()} → ${finalTriangles.toLocaleString()} triangles, ${meshesSimplified} simplified, ${meshesKept} kept, scale: ${scale.toFixed(3)}`);
 
   return { scene, scale };
 }
 
 // Error fallback box for failed mesh loads
-function MeshErrorFallback({ title, color }: { title?: string; color: string }) {
+function MeshErrorFallback({ color }: { color: string }) {
   return (
     <mesh>
       <boxGeometry args={[1.5, 1.5, 1.5]} />
@@ -106,8 +160,45 @@ function MeshErrorFallback({ title, color }: { title?: string; color: string }) 
   );
 }
 
-// Component to render a loaded GLB mesh with optimization and error handling
-function LoadedMesh({ url, title, color }: { url: string; title?: string; color: string }) {
+// React Error Boundary for catching render crashes
+interface MeshErrorBoundaryProps {
+  children: React.ReactNode;
+  fallbackColor: string;
+}
+
+interface MeshErrorBoundaryState {
+  hasError: boolean;
+}
+
+class MeshErrorBoundary extends React.Component<MeshErrorBoundaryProps, MeshErrorBoundaryState> {
+  constructor(props: MeshErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): MeshErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    console.warn('[MESH] Render crashed, using fallback:', error.message, errorInfo);
+  }
+
+  render(): React.ReactNode {
+    if (this.state.hasError) {
+      return (
+        <mesh>
+          <boxGeometry args={[1.5, 1.5, 1.5]} />
+          <meshStandardMaterial color={this.props.fallbackColor} opacity={0.7} transparent />
+        </mesh>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Component to render a loaded GLB mesh with aggressive optimization
+function LoadedMesh({ url, color }: { url: string; color: string }) {
   const [error, setError] = useState(false);
   const [optimizedScene, setOptimizedScene] = useState<{ scene: THREE.Object3D; scale: number } | null>(null);
 
@@ -129,11 +220,11 @@ function LoadedMesh({ url, title, color }: { url: string; title?: string; color:
   }, [gltf.scene, error]);
 
   // Handle loading errors
-  if (error || !optimizedScene) {
-    if (error) {
-      return <MeshErrorFallback title={title} color={color} />;
-    }
-    // Still optimizing
+  if (error) {
+    return <MeshErrorFallback color={color} />;
+  }
+
+  if (!optimizedScene) {
     return <MeshLoadingPlaceholder />;
   }
 
@@ -145,26 +236,13 @@ function LoadedMesh({ url, title, color }: { url: string; title?: string; color:
   );
 }
 
-// Wrapper with error boundary behavior
-function SafeLoadedMesh({ url, title, color }: { url: string; title?: string; color: string }) {
-  const [hasError, setHasError] = useState(false);
-
-  // Reset error state if URL changes
-  useEffect(() => {
-    setHasError(false);
-  }, [url]);
-
-  if (hasError) {
-    return <MeshErrorFallback title={title} color={color} />;
-  }
-
-  try {
-    return <LoadedMesh url={url} title={title} color={color} />;
-  } catch (e) {
-    console.error('[MESH] Render error:', e);
-    setHasError(true);
-    return <MeshErrorFallback title={title} color={color} />;
-  }
+// Wrapper with error boundary
+function SafeLoadedMesh({ url, color }: { url: string; color: string }) {
+  return (
+    <MeshErrorBoundary fallbackColor={color}>
+      <LoadedMesh url={url} color={color} />
+    </MeshErrorBoundary>
+  );
 }
 
 // Wireframe placeholder for loading meshes (with pulsing animation)
@@ -324,7 +402,7 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   const renderShape = () => {
     // If node has a loaded GLB mesh, render it with error handling
     if (node.meshUrl) {
-      return <SafeLoadedMesh url={node.meshUrl} title={node.title} color={node.color || TYPE_COLORS[node.type]} />;
+      return <SafeLoadedMesh url={node.meshUrl} color={node.color || TYPE_COLORS[node.type]} />;
     }
 
     // If mesh is loading, show wireframe placeholder

@@ -139,9 +139,9 @@ export function Workshop3DCanvas() {
       <Canvas
         camera={{ position: [0, 3, 8], fov: 60 }}
         gl={{
-          antialias: true,
+          antialias: false,
           alpha: false,
-          powerPreference: 'default',
+          powerPreference: 'high-performance',
           failIfMajorPerformanceCaveat: false,
         }}
         style={{ background: '#e8e8f0' }}
