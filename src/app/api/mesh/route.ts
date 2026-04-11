@@ -103,23 +103,81 @@ export async function POST(request: Request): Promise<NextResponse> {
 }
 
 // GET /api/mesh?taskId=xxx — Check task status
-export async function GET(request: Request): Promise<NextResponse> {
+// GET /api/mesh?url=xxx — Proxy GLB download (avoids CORS)
+export async function GET(request: Request): Promise<NextResponse | Response> {
+  const { searchParams } = new URL(request.url);
+  const taskId = searchParams.get('taskId');
+  const proxyUrl = searchParams.get('url');
+
+  // Handle GLB proxy request
+  if (proxyUrl) {
+    return handleGlbProxy(proxyUrl);
+  }
+
+  // Handle task status request
+  if (taskId) {
+    return handleTaskStatus(taskId);
+  }
+
+  return NextResponse.json(
+    { error: 'Invalid request', message: 'taskId or url is required' },
+    { status: 400 }
+  );
+}
+
+// Proxy GLB download from Meshy assets (avoids CORS)
+async function handleGlbProxy(url: string): Promise<Response> {
+  // Validate URL is from Meshy assets
+  if (!url.startsWith('https://assets.meshy.ai/')) {
+    return NextResponse.json(
+      { error: 'Invalid URL', message: 'Only Meshy asset URLs are allowed' },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: 'Failed to fetch GLB', message: `${response.status}` },
+        { status: response.status }
+      );
+    }
+
+    // Stream the GLB binary data back to the client
+    const headers = new Headers();
+    headers.set('Content-Type', 'model/gltf-binary');
+    headers.set('Access-Control-Allow-Origin', '*');
+
+    // Pass through content-length if available
+    const contentLength = response.headers.get('content-length');
+    if (contentLength) {
+      headers.set('Content-Length', contentLength);
+    }
+
+    return new Response(response.body, {
+      status: 200,
+      headers,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[MESH API] GLB proxy error:', message);
+    return NextResponse.json(
+      { error: 'Failed to proxy GLB', message },
+      { status: 500 }
+    );
+  }
+}
+
+// Check task status
+async function handleTaskStatus(taskId: string): Promise<NextResponse> {
   const apiKey = process.env.MESHY_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(
       { error: 'MESHY_API_KEY not configured' },
       { status: 501 }
-    );
-  }
-
-  const { searchParams } = new URL(request.url);
-  const taskId = searchParams.get('taskId');
-
-  if (!taskId) {
-    return NextResponse.json(
-      { error: 'Invalid request', message: 'taskId is required' },
-      { status: 400 }
     );
   }
 
