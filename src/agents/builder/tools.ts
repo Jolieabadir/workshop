@@ -13,7 +13,7 @@ export const BUILDER_TOOLS: Tool[] = [
       properties: {
         prompt: {
           type: 'string',
-          description: 'Detailed description of the 3D model to generate. Be specific about shape, materials, colors, style, and details. Example: "A red sports car with black wheels, chrome trim, and tinted windows, low-poly game asset style"',
+          description: 'SHORT description of the 3D model (under 20 words). Simple prompts work best. Examples: "red rocket ship with fins", "wooden chair with armrests", "medieval stone castle tower"',
         },
         title: {
           type: 'string',

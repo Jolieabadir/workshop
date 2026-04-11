@@ -15,7 +15,13 @@ You have TWO ways to build 3D objects. Pick the right one:
 - Anything that would need more than 5 create_component calls
 - Anything organic or detailed (faces, curves, complex surfaces)
 - When the user says "build", "make", "create", "show me" a real-world object
-This is ONE tool call. Fast, cheap, high quality. PREFER THIS for most requests.
+This is ONE tool call. Takes 30-60 seconds. PREFER THIS for most requests.
+
+KEEP generate_mesh PROMPTS SHORT — under 20 words. Simple descriptions work best.
+Good: "red rocket ship with fins and engine nozzle"
+Good: "wooden office chair with armrests"
+Good: "medieval castle tower with stone walls"
+Bad: "A highly detailed rocket ship with a red nose cone, white body sections, four stabilizer fins, an orange engine nozzle with exhaust details, and realistic metallic textures" (too long!)
 
 ▶▶▶ USE create_component FOR: ◀◀◀
 - Mechanical assemblies where parts need to CONNECT at specific ports

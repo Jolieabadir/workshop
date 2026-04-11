@@ -255,7 +255,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           type: 'placeholder' as NodeType,
           shape: 'cube' as NodeShape,
           content: `Generating: ${prompt.slice(0, 50)}...`,
-          title: `\u23F3 ${title}`, // Hourglass emoji prefix
+          title: `\u23F3 ${title} (0%)`, // Hourglass emoji prefix with progress
           position: pos,
           createdAt: now,
           updatedAt: now,
@@ -269,49 +269,59 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // Move builder avatar toward the placeholder
     get().setBuilderTarget(pos);
 
-    // Start async mesh generation
+    // Start async mesh generation with client-side polling
     (async () => {
-      try {
-        const response = await fetch('/api/mesh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, style }),
-        });
+      const POLL_INTERVAL_MS = 5000;
+      const MAX_POLL_TIME_MS = 180000; // 3 minutes
+      const startTime = Date.now();
+      let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message || 'Mesh generation failed');
+      const cleanup = () => {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
         }
+      };
 
-        const data = await response.json();
-
-        // Update node with mesh URL
+      const updateProgress = (progress: number) => {
         set((s) => ({
           nodes: {
             ...s.nodes,
             [id]: s.nodes[id] ? {
               ...s.nodes[id],
-              title, // Remove hourglass prefix
-              meshUrl: data.modelUrl,
+              title: `\u23F3 ${title} (${Math.round(progress)}%)`,
+              updatedAt: Date.now(),
+            } : s.nodes[id],
+          },
+        }));
+      };
+
+      const markSuccess = (modelUrl: string) => {
+        cleanup();
+        set((s) => ({
+          nodes: {
+            ...s.nodes,
+            [id]: s.nodes[id] ? {
+              ...s.nodes[id],
+              title,
+              meshUrl: modelUrl,
               meshLoading: false,
               content: prompt,
               updatedAt: Date.now(),
             } : s.nodes[id],
           },
         }));
+        console.log('[CANVAS] Mesh generated:', title, modelUrl);
+      };
 
-        console.log('[CANVAS] Mesh generated:', title, data.modelUrl);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        console.error('[CANVAS] Mesh generation failed:', message);
-
-        // Update node with error state
+      const markError = (message: string) => {
+        cleanup();
         set((s) => ({
           nodes: {
             ...s.nodes,
             [id]: s.nodes[id] ? {
               ...s.nodes[id],
-              title: `\u274C ${title}`, // X emoji prefix for error
+              title: `\u274C ${title}`,
               meshLoading: false,
               meshError: message,
               content: `Failed: ${message}`,
@@ -319,6 +329,74 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             } : s.nodes[id],
           },
         }));
+        console.error('[CANVAS] Mesh generation failed:', message);
+      };
+
+      try {
+        // Step 1: Submit task
+        const submitResponse = await fetch('/api/mesh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, style }),
+        });
+
+        if (!submitResponse.ok) {
+          const error = await submitResponse.json();
+          throw new Error(error.message || 'Failed to submit mesh task');
+        }
+
+        const { taskId } = await submitResponse.json();
+        console.log('[CANVAS] Mesh task submitted:', taskId);
+
+        // Step 2: Poll for status
+        const pollStatus = async () => {
+          // Check timeout
+          if (Date.now() - startTime > MAX_POLL_TIME_MS) {
+            markError('Mesh generation timed out (>3 minutes). Try a simpler prompt.');
+            return;
+          }
+
+          // Check if node still exists
+          if (!get().nodes[id]) {
+            cleanup();
+            return;
+          }
+
+          try {
+            const statusResponse = await fetch(`/api/mesh?taskId=${taskId}`);
+            if (!statusResponse.ok) {
+              const error = await statusResponse.json();
+              throw new Error(error.message || 'Failed to check task status');
+            }
+
+            const status = await statusResponse.json();
+
+            if (status.status === 'SUCCEEDED' && status.modelUrl) {
+              markSuccess(status.modelUrl);
+            } else if (status.status === 'FAILED') {
+              markError(status.error || 'Mesh generation failed');
+            } else if (status.status === 'EXPIRED') {
+              markError('Mesh generation task expired');
+            } else {
+              // Still in progress — update progress
+              updateProgress(status.progress || 0);
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            console.error('[CANVAS] Poll error:', message);
+            // Don't fail on poll errors, just continue polling
+          }
+        };
+
+        // Initial poll
+        await pollStatus();
+
+        // Set up interval for subsequent polls
+        pollInterval = setInterval(pollStatus, POLL_INTERVAL_MS);
+
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        markError(message);
       }
     })();
 
