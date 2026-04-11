@@ -272,7 +272,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // Start async mesh generation with client-side polling
     (async () => {
       const POLL_INTERVAL_MS = 2000; // Tripo is fast
-      const MAX_POLL_TIME_MS = 120000; // 2 minutes (Tripo typically finishes in ~10s)
+      const MAX_POLL_TIME_MS = 180000; // 3 minutes safety net
       const startTime = Date.now();
       let pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -352,7 +352,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         const pollStatus = async () => {
           // Check timeout
           if (Date.now() - startTime > MAX_POLL_TIME_MS) {
-            markError('Mesh generation timed out (>2 minutes). Try a simpler prompt.');
+            markError('Mesh generation timed out (>3 minutes). Try a simpler prompt.');
             return;
           }
 

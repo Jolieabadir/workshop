@@ -35,7 +35,7 @@ function parseColor(color: string | undefined, fallback: string): THREE.Color {
 
 // Target size for loaded meshes (fits in roughly 2x2x2 units)
 const TARGET_MESH_SIZE = 2;
-const MAX_TRIANGLES_PER_MESH = 2000;
+const MAX_TRIANGLES_PER_MESH = 1500;
 const MAX_TOTAL_TRIANGLES = 10000;
 
 // Extract color from material, falling back to gray
@@ -101,8 +101,8 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
       // Replace material with simple colored material (NO textures)
       child.material = new THREE.MeshStandardMaterial({
         color,
-        roughness: 0.7,
-        metalness: 0.1,
+        roughness: 0.5,
+        metalness: 0.3,
       });
 
       meshInfos.push({ mesh: child, triCount, color, simplified: false });

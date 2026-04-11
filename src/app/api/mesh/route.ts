@@ -52,6 +52,9 @@ export async function POST(request: Request): Promise<NextResponse> {
       body: JSON.stringify({
         type: 'text_to_model',
         prompt,
+        face_limit: 8000,
+        texture: false,
+        pbr: false,
       }),
     });
 
@@ -151,7 +154,8 @@ async function handleGlbProxy(url: string): Promise<Response> {
 
     // Read the full binary data
     const arrayBuffer = await response.arrayBuffer();
-    console.log('[MESH API] GLB fetched, size:', arrayBuffer.byteLength);
+    const sizeMB = (arrayBuffer.byteLength / (1024 * 1024)).toFixed(2);
+    console.log(`[MESH API] GLB fetched, size: ${sizeMB}MB (${arrayBuffer.byteLength.toLocaleString()} bytes)`);
 
     return new NextResponse(arrayBuffer, {
       status: 200,
@@ -219,11 +223,19 @@ async function handleTaskStatus(taskId: string): Promise<NextResponse> {
       );
     }
 
+    // Check for model URL first — it may be available before status changes to 'success'
+    // Tripo uses pbr_model for textured models, base_model for untextured
+    const modelUrl = taskData.output?.pbr_model || taskData.output?.base_model || taskData.result?.pbr_model?.url || taskData.result?.base_model?.url;
+    if (modelUrl && typeof modelUrl === 'string' && modelUrl.length > 0) {
+      console.log('[MESH API] Model URL from:', taskData.output?.pbr_model ? 'output.pbr_model' : taskData.output?.base_model ? 'output.base_model' : 'result fallback');
+      console.log('[MESH API] Model URL available, treating as SUCCEEDED:', modelUrl);
+      return NextResponse.json({ status: 'SUCCEEDED', progress: 100, modelUrl });
+    }
+
     // Map Tripo status (lowercase) to our normalized status (uppercase)
     const tripoStatus = taskData.status;
     let status: 'PENDING' | 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED';
     let progress = 0;
-    let modelUrl: string | undefined;
     let error: string | undefined;
 
     switch (tripoStatus) {
@@ -236,9 +248,9 @@ async function handleTaskStatus(taskId: string): Promise<NextResponse> {
         progress = taskData.progress ?? 50;
         break;
       case 'success':
+        // Model URL already checked above, but status is success with no URL (edge case)
         status = 'SUCCEEDED';
         progress = 100;
-        modelUrl = taskData.output?.pbr_model || taskData.result?.pbr_model?.url;
         break;
       case 'failed':
       case 'cancelled':
@@ -255,7 +267,6 @@ async function handleTaskStatus(taskId: string): Promise<NextResponse> {
     return NextResponse.json({
       status,
       progress,
-      modelUrl,
       error,
     });
   } catch (error) {
