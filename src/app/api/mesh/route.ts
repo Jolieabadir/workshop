@@ -53,8 +53,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         type: 'text_to_model',
         prompt,
         face_limit: 8000,
-        texture: false,
-        pbr: false,
+        texture: true,
+        pbr: true,
       }),
     });
 

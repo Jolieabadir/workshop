@@ -297,6 +297,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       };
 
       const markSuccess = (modelUrl: string) => {
+        console.log('[MESH] markSuccess called, id:', id, 'meshUrl:', modelUrl);
         cleanup();
         set((s) => ({
           nodes: {
@@ -311,6 +312,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
             } : s.nodes[id],
           },
         }));
+        // Log node state after set
+        const updatedNode = get().nodes[id];
+        console.log('[MESH] Node state after markSuccess:', updatedNode?.id, 'meshUrl:', updatedNode?.meshUrl, 'meshLoading:', updatedNode?.meshLoading);
         console.log('[CANVAS] Mesh generated:', title, modelUrl);
       };
 

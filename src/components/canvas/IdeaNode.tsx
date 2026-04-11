@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Html, RoundedBox, useGLTF } from '@react-three/drei';
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
@@ -77,33 +77,27 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
 
       originalTriangles += triCount;
 
-      // Extract color before disposing material
+      // Extract color from material (for fallback and logging)
       let color = new THREE.Color(0x888888);
       if (child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material];
         if (materials.length > 0) {
           color = extractMaterialColor(materials[0]);
+          // Count textures for logging (but don't dispose them)
+          materials.forEach((mat) => {
+            if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
+              if (mat.map) texturesStripped++;
+              if (mat.normalMap) texturesStripped++;
+              if (mat.roughnessMap) texturesStripped++;
+              if (mat.metalnessMap) texturesStripped++;
+              if (mat.aoMap) texturesStripped++;
+              if (mat.emissiveMap) texturesStripped++;
+            }
+          });
         }
-        // Count and dispose ALL textures
-        materials.forEach((mat) => {
-          if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
-            if (mat.map) { texturesStripped++; mat.map.dispose(); }
-            if (mat.normalMap) { texturesStripped++; mat.normalMap.dispose(); }
-            if (mat.roughnessMap) { texturesStripped++; mat.roughnessMap.dispose(); }
-            if (mat.metalnessMap) { texturesStripped++; mat.metalnessMap.dispose(); }
-            if (mat.aoMap) { texturesStripped++; mat.aoMap.dispose(); }
-            if (mat.emissiveMap) { texturesStripped++; mat.emissiveMap.dispose(); }
-          }
-          mat.dispose();
-        });
       }
 
-      // Replace material with simple colored material (NO textures)
-      child.material = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.5,
-        metalness: 0.3,
-      });
+      // Keep original material with textures (don't replace)
 
       meshInfos.push({ mesh: child, triCount, color, simplified: false });
     }
@@ -186,7 +180,7 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
   box.getCenter(center);
   scene.position.sub(center.multiplyScalar(scale));
 
-  console.log(`[MESH] Optimized: ${originalTriangles.toLocaleString()} → ${finalTriangles.toLocaleString()} triangles (${meshesSimplified} simplified, ${meshesKept} kept), ${texturesStripped} textures stripped, scale: ${scale.toFixed(3)}`);
+  console.log(`[MESH] Optimized: ${originalTriangles.toLocaleString()} → ${finalTriangles.toLocaleString()} triangles (${meshesSimplified} simplified, ${meshesKept} kept), ${texturesStripped} textures preserved, scale: ${scale.toFixed(3)}`);
 
   return { scene, scale };
 }
@@ -443,7 +437,11 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   const renderShape = () => {
     // If node has a loaded GLB mesh, render it with error handling
     if (node.meshUrl) {
-      return <SafeLoadedMesh url={node.meshUrl} color={node.color || TYPE_COLORS[node.type]} />;
+      return (
+        <Suspense fallback={<MeshLoadingPlaceholder />}>
+          <SafeLoadedMesh url={node.meshUrl} color={node.color || TYPE_COLORS[node.type]} />
+        </Suspense>
+      );
     }
 
     // If mesh is loading, show wireframe placeholder
