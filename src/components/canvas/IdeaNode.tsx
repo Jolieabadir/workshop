@@ -35,7 +35,8 @@ function parseColor(color: string | undefined, fallback: string): THREE.Color {
 
 // Target size for loaded meshes (fits in roughly 2x2x2 units)
 const TARGET_MESH_SIZE = 2;
-const MAX_TRIANGLES_PER_MESH = 5000;
+const MAX_TRIANGLES_PER_MESH = 2000;
+const MAX_TOTAL_TRIANGLES = 10000;
 
 // Extract color from material, falling back to gray
 function extractMaterialColor(material: THREE.Material): THREE.Color {
@@ -52,83 +53,123 @@ function extractMaterialColor(material: THREE.Material): THREE.Color {
 // Aggressively optimize a loaded GLB scene to prevent WebGL crashes
 function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; scale: number } {
   let originalTriangles = 0;
-  let finalTriangles = 0;
-  let meshesSimplified = 0;
-  let meshesKept = 0;
+  let texturesStripped = 0;
 
-  // First pass: count triangles and collect meshes to process
-  const meshesToProcess: THREE.Mesh[] = [];
+  // First pass: collect meshes and count original triangles/textures
+  interface MeshInfo {
+    mesh: THREE.Mesh;
+    triCount: number;
+    color: THREE.Color;
+    simplified: boolean;
+  }
+  const meshInfos: MeshInfo[] = [];
+
   scene.traverse((child) => {
     if (child instanceof THREE.Mesh) {
-      meshesToProcess.push(child);
+      const geometry = child.geometry;
+      let triCount = 0;
+
+      if (geometry.index) {
+        triCount = geometry.index.count / 3;
+      } else if (geometry.attributes.position) {
+        triCount = geometry.attributes.position.count / 3;
+      }
+
+      originalTriangles += triCount;
+
+      // Extract color before disposing material
+      let color = new THREE.Color(0x888888);
+      if (child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        if (materials.length > 0) {
+          color = extractMaterialColor(materials[0]);
+        }
+        // Count and dispose ALL textures
+        materials.forEach((mat) => {
+          if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
+            if (mat.map) { texturesStripped++; mat.map.dispose(); }
+            if (mat.normalMap) { texturesStripped++; mat.normalMap.dispose(); }
+            if (mat.roughnessMap) { texturesStripped++; mat.roughnessMap.dispose(); }
+            if (mat.metalnessMap) { texturesStripped++; mat.metalnessMap.dispose(); }
+            if (mat.aoMap) { texturesStripped++; mat.aoMap.dispose(); }
+            if (mat.emissiveMap) { texturesStripped++; mat.emissiveMap.dispose(); }
+          }
+          mat.dispose();
+        });
+      }
+
+      // Replace material with simple colored material (NO textures)
+      child.material = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.7,
+        metalness: 0.1,
+      });
+
+      meshInfos.push({ mesh: child, triCount, color, simplified: false });
     }
   });
 
-  // Process each mesh
-  for (const mesh of meshesToProcess) {
-    const geometry = mesh.geometry;
-    let triCount = 0;
+  // Helper to simplify a mesh to its bounding box
+  const simplifyMeshToBox = (info: MeshInfo): number => {
+    if (info.simplified) return 12; // Already simplified
 
-    if (geometry.index) {
-      triCount = geometry.index.count / 3;
-    } else if (geometry.attributes.position) {
-      triCount = geometry.attributes.position.count / 3;
+    const geometry = info.mesh.geometry;
+    geometry.computeBoundingBox();
+    const bbox = geometry.boundingBox;
+    if (bbox) {
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+
+      // Dispose original geometry
+      geometry.dispose();
+
+      // Replace with simple box geometry (lower poly - just 1 segment per side)
+      const simpleGeo = new THREE.BoxGeometry(size.x, size.y, size.z, 1, 1, 1);
+      info.mesh.geometry = simpleGeo;
+      info.mesh.position.add(center);
+      info.simplified = true;
     }
+    return 12; // Box has 12 triangles
+  };
 
-    originalTriangles += triCount;
-
-    // Extract color before disposing material
-    let color = new THREE.Color(0x888888);
-    if (mesh.material) {
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      if (materials.length > 0) {
-        color = extractMaterialColor(materials[0]);
-      }
-      // Dispose ALL textures and old materials
-      materials.forEach((mat) => {
-        if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
-          if (mat.map) { mat.map.dispose(); }
-          if (mat.normalMap) { mat.normalMap.dispose(); }
-          if (mat.roughnessMap) { mat.roughnessMap.dispose(); }
-          if (mat.metalnessMap) { mat.metalnessMap.dispose(); }
-          if (mat.aoMap) { mat.aoMap.dispose(); }
-          if (mat.emissiveMap) { mat.emissiveMap.dispose(); }
-        }
-        mat.dispose();
-      });
-    }
-
-    // Replace material with simple colored material (NO textures)
-    mesh.material = new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.7,
-      metalness: 0.1,
-    });
-
-    // If mesh is too heavy, replace geometry with bounding box approximation
-    if (triCount > MAX_TRIANGLES_PER_MESH) {
-      // Get bounding box of original mesh
-      geometry.computeBoundingBox();
-      const bbox = geometry.boundingBox;
-      if (bbox) {
-        const size = new THREE.Vector3();
-        bbox.getSize(size);
-        const center = new THREE.Vector3();
-        bbox.getCenter(center);
-
-        // Dispose original heavy geometry
-        geometry.dispose();
-
-        // Replace with simple box geometry
-        const simpleGeo = new THREE.BoxGeometry(size.x, size.y, size.z);
-        mesh.geometry = simpleGeo;
-        mesh.position.add(center);
-
-        finalTriangles += 12; // Box has 12 triangles
-        meshesSimplified++;
-      }
+  // Second pass: simplify any mesh over MAX_TRIANGLES_PER_MESH
+  let currentTotal = 0;
+  for (const info of meshInfos) {
+    if (info.triCount > MAX_TRIANGLES_PER_MESH) {
+      currentTotal += simplifyMeshToBox(info);
     } else {
-      finalTriangles += triCount;
+      currentTotal += info.triCount;
+    }
+  }
+
+  // Third pass: if still over budget, progressively simplify largest meshes first
+  if (currentTotal > MAX_TOTAL_TRIANGLES) {
+    // Sort by triangle count descending (non-simplified meshes only)
+    const unsimplified = meshInfos
+      .filter((info) => !info.simplified)
+      .sort((a, b) => b.triCount - a.triCount);
+
+    for (const info of unsimplified) {
+      if (currentTotal <= MAX_TOTAL_TRIANGLES) break;
+
+      // Remove this mesh's triangles from total, add box triangles
+      currentTotal -= info.triCount;
+      currentTotal += simplifyMeshToBox(info);
+    }
+  }
+
+  // Calculate final triangle count
+  let finalTriangles = 0;
+  let meshesSimplified = 0;
+  let meshesKept = 0;
+  for (const info of meshInfos) {
+    if (info.simplified) {
+      finalTriangles += 12;
+      meshesSimplified++;
+    } else {
+      finalTriangles += info.triCount;
       meshesKept++;
     }
   }
@@ -145,7 +186,7 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
   box.getCenter(center);
   scene.position.sub(center.multiplyScalar(scale));
 
-  console.log(`[MESH] Optimized: ${originalTriangles.toLocaleString()} → ${finalTriangles.toLocaleString()} triangles, ${meshesSimplified} simplified, ${meshesKept} kept, scale: ${scale.toFixed(3)}`);
+  console.log(`[MESH] Optimized: ${originalTriangles.toLocaleString()} → ${finalTriangles.toLocaleString()} triangles (${meshesSimplified} simplified, ${meshesKept} kept), ${texturesStripped} textures stripped, scale: ${scale.toFixed(3)}`);
 
   return { scene, scale };
 }
