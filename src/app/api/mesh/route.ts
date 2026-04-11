@@ -238,7 +238,7 @@ async function handleTaskStatus(taskId: string): Promise<NextResponse> {
       case 'success':
         status = 'SUCCEEDED';
         progress = 100;
-        modelUrl = taskData.output?.model;
+        modelUrl = taskData.output?.pbr_model || taskData.result?.pbr_model?.url;
         break;
       case 'failed':
       case 'cancelled':
