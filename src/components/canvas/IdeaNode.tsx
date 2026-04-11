@@ -1,6 +1,6 @@
 'use client';
 
-import { Html, RoundedBox } from '@react-three/drei';
+import { Html, RoundedBox, useGLTF } from '@react-three/drei';
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -30,6 +30,35 @@ function parseColor(color: string | undefined, fallback: string): THREE.Color {
   } catch {
     return new THREE.Color(fallback);
   }
+}
+
+// Component to render a loaded GLB mesh
+function LoadedMesh({ url }: { url: string }) {
+  const { scene } = useGLTF(url);
+  // Clone the scene to avoid issues with multiple instances
+  const clonedScene = useMemo(() => scene.clone(), [scene]);
+  return <primitive object={clonedScene} scale={[2, 2, 2]} />;
+}
+
+// Wireframe placeholder for loading meshes (with pulsing animation)
+function MeshLoadingPlaceholder() {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  useFrame((_, delta) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += delta * 0.5;
+      // Pulse scale
+      const pulse = 1 + Math.sin(Date.now() * 0.003) * 0.1;
+      meshRef.current.scale.setScalar(pulse);
+    }
+  });
+
+  return (
+    <mesh ref={meshRef}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshBasicMaterial color="#888888" wireframe />
+    </mesh>
+  );
 }
 
 // Hexagonal prism geometry for diagram nodes
@@ -166,6 +195,16 @@ export function IdeaNode({ node }: IdeaNodeProps) {
 
   // Render the appropriate 3D shape based on node.shape (type determines color, shape determines geometry)
   const renderShape = () => {
+    // If node has a loaded GLB mesh, render it
+    if (node.meshUrl) {
+      return <LoadedMesh url={node.meshUrl} />;
+    }
+
+    // If mesh is loading, show wireframe placeholder
+    if (node.meshLoading) {
+      return <MeshLoadingPlaceholder />;
+    }
+
     // If node has component data, render the electronic component instead of primitive shape
     if (node.component) {
       const rotation = node.component.rotation;

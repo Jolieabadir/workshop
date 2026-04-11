@@ -74,6 +74,12 @@ export interface CanvasNode {
   badges?: Badge[];
   /** Optional electronic component data (renders as 3D component instead of primitive shape) */
   component?: ComponentData;
+  /** URL to a GLB model (from Meshy AI mesh generation) */
+  meshUrl?: string;
+  /** True while mesh is being generated */
+  meshLoading?: boolean;
+  /** Error message if mesh generation failed */
+  meshError?: string;
 }
 
 export interface Badge {

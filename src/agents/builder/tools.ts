@@ -6,6 +6,38 @@ import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 
 export const BUILDER_TOOLS: Tool[] = [
   {
+    name: 'generate_mesh',
+    description: 'Generate a complex 3D model using AI (Meshy API). Use this for realistic objects that would need 10+ create_component calls: full vehicles (cars, motorcycles, aircraft), characters/creatures, buildings, furniture, organic shapes (trees, rocks), or any detailed prop. Takes 15-30 seconds to generate. Returns a GLB model loaded into the scene. For mechanical assemblies where connector ports matter (robot joints, circuits, gearboxes), use create_component instead.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Detailed description of the 3D model to generate. Be specific about shape, materials, colors, style, and details. Example: "A red sports car with black wheels, chrome trim, and tinted windows, low-poly game asset style"',
+        },
+        title: {
+          type: 'string',
+          description: 'Display name for the model in the scene (e.g. "Sports Car", "Office Chair", "Oak Tree")',
+        },
+        position: {
+          type: 'object',
+          properties: {
+            x: { type: 'number' },
+            y: { type: 'number' },
+            z: { type: 'number' },
+          },
+          description: '3D position. Defaults to center of scene.',
+        },
+        style: {
+          type: 'string',
+          enum: ['realistic', 'cartoon'],
+          description: 'Art style for the generated model. Default: realistic',
+        },
+      },
+      required: ['prompt', 'title'],
+    },
+  },
+  {
     name: 'create_component',
     description: 'Create a parametric 3D component (electronic or mechanical) on the canvas. Use this for building physical objects like rockets, circuits, machines, robots, etc. Components have proper 3D geometry and connector points for wiring/assembly.',
     input_schema: {

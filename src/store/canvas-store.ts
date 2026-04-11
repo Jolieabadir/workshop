@@ -123,6 +123,7 @@ interface CanvasStore extends CanvasState {
   // Direct mutations
   addNode: (type: NodeType, content: string, title?: string, position?: Vec3, shape?: NodeShape, context?: PlacementContext) => string;
   addComponent: (componentType: ComponentType, params: Record<string, unknown>, title: string, position?: Vec3, rotation?: Vec3) => string;
+  generateMesh: (prompt: string, title: string, position?: Vec3, style?: 'realistic' | 'cartoon') => string;
   removeNode: (id: string) => void;
   updateNode: (id: string, changes: Partial<CanvasNode>) => void;
   moveNode: (id: string, position: Vec3) => void;
@@ -236,6 +237,91 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }));
     // Move builder avatar toward the new component
     get().setBuilderTarget(pos);
+    return id;
+  },
+
+  generateMesh: (prompt, title, position, style = 'realistic') => {
+    const id = uid();
+    const now = Date.now();
+    const state = get();
+    const pos = position ?? findContextAwarePosition(state.nodes, state.groups);
+
+    // Create placeholder node with loading state
+    set((s) => ({
+      nodes: {
+        ...s.nodes,
+        [id]: {
+          id,
+          type: 'placeholder' as NodeType,
+          shape: 'cube' as NodeShape,
+          content: `Generating: ${prompt.slice(0, 50)}...`,
+          title: `\u23F3 ${title}`, // Hourglass emoji prefix
+          position: pos,
+          createdAt: now,
+          updatedAt: now,
+          meshLoading: true,
+          color: '#888888',
+        },
+      },
+      focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
+    }));
+
+    // Move builder avatar toward the placeholder
+    get().setBuilderTarget(pos);
+
+    // Start async mesh generation
+    (async () => {
+      try {
+        const response = await fetch('/api/mesh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, style }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Mesh generation failed');
+        }
+
+        const data = await response.json();
+
+        // Update node with mesh URL
+        set((s) => ({
+          nodes: {
+            ...s.nodes,
+            [id]: s.nodes[id] ? {
+              ...s.nodes[id],
+              title, // Remove hourglass prefix
+              meshUrl: data.modelUrl,
+              meshLoading: false,
+              content: prompt,
+              updatedAt: Date.now(),
+            } : s.nodes[id],
+          },
+        }));
+
+        console.log('[CANVAS] Mesh generated:', title, data.modelUrl);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('[CANVAS] Mesh generation failed:', message);
+
+        // Update node with error state
+        set((s) => ({
+          nodes: {
+            ...s.nodes,
+            [id]: s.nodes[id] ? {
+              ...s.nodes[id],
+              title: `\u274C ${title}`, // X emoji prefix for error
+              meshLoading: false,
+              meshError: message,
+              content: `Failed: ${message}`,
+              updatedAt: Date.now(),
+            } : s.nodes[id],
+          },
+        }));
+      }
+    })();
+
     return id;
   },
 
@@ -428,6 +514,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           action.title,
           action.position,
           action.rotation
+        );
+        break;
+      case 'generate_mesh':
+        store.generateMesh(
+          action.prompt,
+          action.title,
+          action.position,
+          action.style
         );
         break;
       case 'create_connection':

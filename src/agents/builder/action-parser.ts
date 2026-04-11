@@ -243,6 +243,15 @@ export function parseToolCallToAction(toolName: string, toolInput: Record<string
         rotation: toolInput.rotation as Vec3 | undefined,
       };
 
+    case 'generate_mesh':
+      return {
+        type: 'generate_mesh',
+        prompt: toolInput.prompt as string,
+        title: toolInput.title as string,
+        position: toolInput.position as Vec3 | undefined,
+        style: toolInput.style as 'realistic' | 'cartoon' | undefined,
+      };
+
     case 'create_connection':
       return {
         type: 'create_connection',
