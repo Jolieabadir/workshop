@@ -52,7 +52,6 @@ export async function POST(request: Request): Promise<NextResponse> {
       body: JSON.stringify({
         type: 'text_to_model',
         prompt,
-        face_limit: 8000,
         texture: true,
         pbr: true,
       }),
