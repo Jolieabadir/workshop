@@ -71,11 +71,13 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    const data = await response.json();
-    const taskId = data.data?.task_id;
+    const result = await response.json();
+    console.log('[MESH API] Tripo submit response:', JSON.stringify(result));
+
+    const taskId = result.data?.task_id;
 
     if (!taskId) {
-      console.error('[MESH API] No task_id in response:', data);
+      console.error('[MESH API] No task_id in response:', result);
       return NextResponse.json(
         { error: 'Invalid response', message: 'No task_id returned from Tripo API' },
         { status: 500 }
@@ -204,17 +206,20 @@ async function handleTaskStatus(taskId: string): Promise<NextResponse> {
       );
     }
 
-    const data = await response.json();
-    const taskData = data.data;
+    const result = await response.json();
+    console.log('[MESH API] Tripo status response:', JSON.stringify(result));
+
+    const taskData = result.data;
 
     if (!taskData) {
+      console.error('[MESH API] No data in Tripo response:', result);
       return NextResponse.json(
         { error: 'Invalid response', message: 'No data in Tripo response' },
         { status: 500 }
       );
     }
 
-    // Map Tripo status to our normalized status
+    // Map Tripo status (lowercase) to our normalized status (uppercase)
     const tripoStatus = taskData.status;
     let status: 'PENDING' | 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED';
     let progress = 0;
