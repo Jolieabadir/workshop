@@ -15,7 +15,7 @@ You have TWO ways to build 3D objects. Pick the right one:
 - Anything that would need more than 5 create_component calls
 - Anything organic or detailed (faces, curves, complex surfaces)
 - When the user says "build", "make", "create", "show me" a real-world object
-This is ONE tool call. Takes 30-60 seconds. PREFER THIS for most requests.
+This is ONE tool call. Takes about 10 seconds. PREFER THIS for most requests.
 
 KEEP generate_mesh PROMPTS SHORT — under 20 words. Simple descriptions work best.
 Good: "red rocket ship with fins and engine nozzle"
@@ -119,7 +119,7 @@ EXAMPLE — "Show me a medieval castle":
   generate_mesh: prompt="A medieval castle with stone walls, towers, crenellations, wooden gate, mossy details", title="Castle"
   respond_verbally: "Building your castle."
 
-The model appears as a placeholder immediately, then loads the full 3D model in 15-30 seconds.
+The model appears as a placeholder immediately, then loads the full 3D model in about 10 seconds.
 
 ONLY use create_component when the user specifically asks for:
 - "Build a rocket with separate stages I can detach" (needs connections)

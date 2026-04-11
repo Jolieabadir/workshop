@@ -1,46 +1,31 @@
 // ============================================================
-// Workshop — Meshy API Proxy for 3D Mesh Generation
+// Workshop — Tripo API Proxy for 3D Mesh Generation
 // ============================================================
 //
-// Two endpoints:
+// Three endpoints:
 // - POST /api/mesh — submit task, return taskId immediately
 // - GET /api/mesh?taskId=xxx — check task status
+// - GET /api/mesh?url=xxx — proxy GLB download (avoids CORS)
 // ============================================================
 
 import { NextResponse } from 'next/server';
 
-const MESHY_API_URL = 'https://api.meshy.ai/openapi/v2/text-to-3d';
-
-interface MeshyTaskResponse {
-  id: string;
-  status: 'PENDING' | 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED' | 'EXPIRED';
-  model_urls?: {
-    glb?: string;
-    fbx?: string;
-    usdz?: string;
-    obj?: string;
-  };
-  thumbnail_url?: string;
-  progress?: number;
-  task_error?: {
-    message: string;
-  };
-}
+const TRIPO_API_URL = 'https://api.tripo3d.ai/v2/openapi/task';
 
 interface SubmitMeshRequest {
   prompt: string;
-  style?: 'realistic' | 'cartoon';
+  style?: string;
 }
 
 // POST /api/mesh — Submit a new mesh generation task
 export async function POST(request: Request): Promise<NextResponse> {
-  const apiKey = process.env.MESHY_API_KEY;
+  const apiKey = process.env.TRIPO_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(
       {
-        error: 'MESHY_API_KEY not configured',
-        message: 'To enable AI mesh generation, add MESHY_API_KEY to your .env.local file. Get a free API key at https://meshy.ai',
+        error: 'TRIPO_API_KEY not configured',
+        message: 'To enable AI mesh generation, add TRIPO_API_KEY to your .env.local file. Get a free API key at https://tripo3d.ai',
       },
       { status: 501 }
     );
@@ -48,7 +33,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const body: SubmitMeshRequest = await request.json();
-    const { prompt, style = 'realistic' } = body;
+    const { prompt } = body;
 
     if (!prompt || typeof prompt !== 'string') {
       return NextResponse.json(
@@ -57,40 +42,47 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    // Submit to Meshy API
-    const response = await fetch(MESHY_API_URL, {
+    // Submit to Tripo API
+    const response = await fetch(TRIPO_API_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        mode: 'preview',
+        type: 'text_to_model',
         prompt,
-        art_style: style,
-        should_remesh: true,
       }),
     });
 
     if (response.status === 429) {
       return NextResponse.json(
-        { error: 'Rate limited', message: 'Meshy API rate limit reached. Please wait and try again.' },
+        { error: 'Rate limited', message: 'Tripo API rate limit reached. Please wait and try again.' },
         { status: 429 }
       );
     }
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('[MESH API] Tripo POST error:', response.status, errorText);
       return NextResponse.json(
-        { error: 'Meshy API error', message: `${response.status} - ${errorText}` },
+        { error: 'Tripo API error', message: `${response.status} - ${errorText}` },
         { status: 500 }
       );
     }
 
     const data = await response.json();
-    const taskId = data.result;
+    const taskId = data.data?.task_id;
 
-    // Return task ID immediately — client will poll
+    if (!taskId) {
+      console.error('[MESH API] No task_id in response:', data);
+      return NextResponse.json(
+        { error: 'Invalid response', message: 'No task_id returned from Tripo API' },
+        { status: 500 }
+      );
+    }
+
+    console.log('[MESH API] Task submitted:', taskId);
     return NextResponse.json({ taskId });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -125,13 +117,20 @@ export async function GET(request: Request): Promise<NextResponse | Response> {
   );
 }
 
-// Proxy GLB download from Meshy assets (avoids CORS)
+// Proxy GLB download (avoids CORS)
 async function handleGlbProxy(url: string): Promise<Response> {
-  // Validate URL is from Meshy assets
-  if (!url.startsWith('https://assets.meshy.ai/')) {
+  // Allow Tripo URLs and other common 3D asset hosts
+  const allowedHosts = [
+    'https://tripo-data',
+    'https://assets.meshy.ai/',
+    'https://cdn.tripo3d.ai/',
+  ];
+
+  const isAllowed = allowedHosts.some((host) => url.startsWith(host));
+  if (!isAllowed) {
     console.error('[MESH API] Invalid proxy URL:', url);
     return NextResponse.json(
-      { error: 'Invalid URL', message: 'Only Meshy asset URLs are allowed' },
+      { error: 'Invalid URL', message: 'URL not from allowed hosts' },
       { status: 400 }
     );
   }
@@ -148,7 +147,7 @@ async function handleGlbProxy(url: string): Promise<Response> {
       );
     }
 
-    // Read the full binary data (more reliable than streaming in Next.js)
+    // Read the full binary data
     const arrayBuffer = await response.arrayBuffer();
     console.log('[MESH API] GLB fetched, size:', arrayBuffer.byteLength);
 
@@ -170,19 +169,19 @@ async function handleGlbProxy(url: string): Promise<Response> {
   }
 }
 
-// Check task status
+// Check task status from Tripo API
 async function handleTaskStatus(taskId: string): Promise<NextResponse> {
-  const apiKey = process.env.MESHY_API_KEY;
+  const apiKey = process.env.TRIPO_API_KEY;
 
   if (!apiKey) {
     return NextResponse.json(
-      { error: 'MESHY_API_KEY not configured' },
+      { error: 'TRIPO_API_KEY not configured' },
       { status: 501 }
     );
   }
 
   try {
-    const response = await fetch(`${MESHY_API_URL}/${taskId}`, {
+    const response = await fetch(`${TRIPO_API_URL}/${taskId}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -191,28 +190,68 @@ async function handleTaskStatus(taskId: string): Promise<NextResponse> {
 
     if (response.status === 429) {
       return NextResponse.json(
-        { error: 'Rate limited', message: 'Meshy API rate limit reached.' },
+        { error: 'Rate limited', message: 'Tripo API rate limit reached.' },
         { status: 429 }
       );
     }
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('[MESH API] Tripo GET error:', response.status, errorText);
       return NextResponse.json(
-        { error: 'Meshy API error', message: `${response.status} - ${errorText}` },
+        { error: 'Tripo API error', message: `${response.status} - ${errorText}` },
         { status: 500 }
       );
     }
 
-    const task: MeshyTaskResponse = await response.json();
+    const data = await response.json();
+    const taskData = data.data;
 
-    // Return status info for client
+    if (!taskData) {
+      return NextResponse.json(
+        { error: 'Invalid response', message: 'No data in Tripo response' },
+        { status: 500 }
+      );
+    }
+
+    // Map Tripo status to our normalized status
+    const tripoStatus = taskData.status;
+    let status: 'PENDING' | 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED';
+    let progress = 0;
+    let modelUrl: string | undefined;
+    let error: string | undefined;
+
+    switch (tripoStatus) {
+      case 'queued':
+        status = 'IN_PROGRESS';
+        progress = 10;
+        break;
+      case 'running':
+        status = 'IN_PROGRESS';
+        progress = taskData.progress ?? 50;
+        break;
+      case 'success':
+        status = 'SUCCEEDED';
+        progress = 100;
+        modelUrl = taskData.output?.model;
+        break;
+      case 'failed':
+      case 'cancelled':
+        status = 'FAILED';
+        error = taskData.output?.error || 'Generation failed';
+        break;
+      default:
+        status = 'IN_PROGRESS';
+        progress = 25;
+    }
+
+    console.log('[MESH API] Task status:', taskId, status, progress);
+
     return NextResponse.json({
-      status: task.status,
-      progress: task.progress ?? 0,
-      modelUrl: task.status === 'SUCCEEDED' ? task.model_urls?.glb : undefined,
-      thumbnailUrl: task.status === 'SUCCEEDED' ? task.thumbnail_url : undefined,
-      error: task.status === 'FAILED' ? task.task_error?.message : undefined,
+      status,
+      progress,
+      modelUrl,
+      error,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

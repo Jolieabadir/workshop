@@ -7,7 +7,7 @@ import type { Tool } from '@anthropic-ai/sdk/resources/messages';
 export const BUILDER_TOOLS: Tool[] = [
   {
     name: 'generate_mesh',
-    description: 'Generate a complex 3D model using AI (Meshy API). Use this for realistic objects that would need 10+ create_component calls: full vehicles (cars, motorcycles, aircraft), characters/creatures, buildings, furniture, organic shapes (trees, rocks), or any detailed prop. Takes 15-30 seconds to generate. Returns a GLB model loaded into the scene. For mechanical assemblies where connector ports matter (robot joints, circuits, gearboxes), use create_component instead.',
+    description: 'Generate a complex 3D model using AI (Tripo API). Use this for realistic objects that would need 10+ create_component calls: full vehicles (cars, motorcycles, aircraft), characters/creatures, buildings, furniture, organic shapes (trees, rocks), or any detailed prop. Takes about 10 seconds to generate. Returns a GLB model loaded into the scene. For mechanical assemblies where connector ports matter (robot joints, circuits, gearboxes), use create_component instead.',
     input_schema: {
       type: 'object' as const,
       properties: {
