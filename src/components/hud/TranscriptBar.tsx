@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
+import { useVisualFeedbackLoop } from '@/hooks/useVisualFeedbackLoop';
 
 interface TranscriptBarProps {
   isListening: boolean;
@@ -41,6 +42,24 @@ export function TranscriptBar({
   const leftHand = useHandStore((s) => s.leftHand);
   const rightHand = useHandStore((s) => s.rightHand);
   const grabbedNodeId = useHandStore((s) => s.grabbedNodeId);
+
+  // Visual feedback loop for assembly correction
+  const {
+    isRunning: isFixingAssembly,
+    currentIteration,
+    maxIterations,
+    triggerVisualFeedbackLoop,
+  } = useVisualFeedbackLoop();
+
+  const handleFixAssembly = async () => {
+    if (isFixingAssembly) return;
+    const result = await triggerVisualFeedbackLoop();
+    if (result.success) {
+      console.log(`[FIX ASSEMBLY] Approved after ${result.iterations} iteration(s)`);
+    } else {
+      console.log(`[FIX ASSEMBLY] Completed ${result.iterations} iteration(s), not fully approved`);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,6 +235,21 @@ export function TranscriptBar({
 
         {/* Debug buttons */}
         <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleFixAssembly}
+            disabled={isFixingAssembly}
+            style={{
+              ...btnStyle,
+              background: isFixingAssembly ? 'rgba(168, 85, 247, 0.3)' : 'rgba(168, 85, 247, 0.2)',
+              borderColor: isFixingAssembly ? 'rgba(168, 85, 247, 0.6)' : 'rgba(168, 85, 247, 0.4)',
+              color: isFixingAssembly ? '#c4b5fd' : '#a78bfa',
+              cursor: isFixingAssembly ? 'wait' : 'pointer',
+            }}
+          >
+            {isFixingAssembly
+              ? `Owl evaluating... (${currentIteration}/${maxIterations})`
+              : 'Fix Assembly'}
+          </button>
           <button onClick={() => addNode('text_card', 'New idea', 'Untitled')} style={btnStyle}>
             + Add card
           </button>

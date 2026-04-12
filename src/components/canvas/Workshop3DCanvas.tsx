@@ -12,6 +12,7 @@ import { ConnectionLine } from './ConnectionLine';
 import { BuilderAvatar } from './BuilderAvatar';
 import { HandCursor } from './HandCursor';
 import { SpatialEngine } from './SpatialEngine';
+import { SceneCapture } from './SceneCapture';
 
 // Smoothing factor for camera movement (lower = smoother)
 const CAMERA_SMOOTHING = 0.04;
@@ -157,6 +158,7 @@ export function Workshop3DCanvas() {
         }}
       >
         <SceneContent />
+        <SceneCapture />
       </Canvas>
     </div>
   );
