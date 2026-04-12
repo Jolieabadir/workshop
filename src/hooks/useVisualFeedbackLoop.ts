@@ -3,11 +3,8 @@
 import { useState, useCallback, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
 import { parseToolCallToAction } from '@/agents/builder/action-parser';
+import { getCaptureFrames } from '@/components/canvas/SceneCapture';
 import type { BuilderAction, CanvasState } from '@/core/types';
-
-// Import the capture function from SceneCapture (will be available when SceneCapture is created)
-// For now, we declare the expected signature
-declare function getCaptureFrames(): Promise<string[]>;
 
 const MAX_ITERATIONS = 5;
 const RENDER_SETTLE_MS = 500;
@@ -102,14 +99,15 @@ export function useVisualFeedbackLoop() {
    */
   const captureFrames = useCallback(async (): Promise<string[]> => {
     try {
-      // Try to get the capture function from the global scope
-      // SceneCapture.tsx will expose this when mounted
-      const captureFunc = (window as unknown as { getCaptureFrames?: () => Promise<string[]> }).getCaptureFrames;
-      if (captureFunc) {
-        return await captureFunc();
+      // Get the capture function from the module export
+      const captureFn = getCaptureFrames();
+      if (!captureFn) {
+        console.warn('[FEEDBACK LOOP] getCaptureFrames not available (SceneCapture not mounted)');
+        return [];
       }
-      console.warn('[FEEDBACK LOOP] getCaptureFrames not available, returning empty frames');
-      return [];
+      // captureFn returns CapturedFrame[] with { name, image } — extract just the image strings
+      const capturedFrames = await captureFn();
+      return capturedFrames.map((frame) => frame.image);
     } catch (error) {
       console.error('[FEEDBACK LOOP] Error capturing frames:', error);
       return [];
@@ -365,6 +363,13 @@ export function useVisualFeedbackLoop() {
         // Step 1: Capture frames from 3D scene
         const frames = await captureFrames();
         console.log(`[FEEDBACK LOOP] Captured ${frames.length} frames`);
+
+        // Abort if no frames captured — can't evaluate without visual input
+        if (frames.length === 0) {
+          console.error('[FEEDBACK LOOP] No frames captured, aborting');
+          setState((s) => ({ ...s, error: 'No frames captured (SceneCapture not ready)' }));
+          break;
+        }
 
         // Step 2: Get OpenCV metrics (optional - may not be available)
         const cvMetrics = await analyzeCVMetrics(frames);
