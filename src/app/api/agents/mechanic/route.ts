@@ -180,9 +180,17 @@ export async function POST(request: NextRequest) {
     // Build user message with all context
     let userMessage = `${canvasContext}\n\n${metricsContext}\n\n`;
 
-    // Add exact 3D geometry measurements if provided
+    // Add exact 3D geometry measurements if provided (truncate if too large)
     if (geometryContext) {
-      userMessage += `${geometryContext}\n\n`;
+      // Limit geometry context to ~4000 chars to avoid token limits
+      const maxGeometryLength = 4000;
+      if (geometryContext.length > maxGeometryLength) {
+        const truncated = geometryContext.slice(0, maxGeometryLength) + '\n\n... (truncated for token limit)';
+        userMessage += `${truncated}\n\n`;
+        console.log(`[MECHANIC API] Truncated geometry context from ${geometryContext.length} to ${maxGeometryLength} chars`);
+      } else {
+        userMessage += `${geometryContext}\n\n`;
+      }
     }
 
     userMessage += `${owlContext}\n\n`;
@@ -284,9 +292,13 @@ export async function POST(request: NextRequest) {
     console.log(`[MECHANIC API] Completed in ${iterations} rounds, total actions: ${allActions.length}`);
     return NextResponse.json({ actions: allActions });
   } catch (error) {
-    console.error('Mechanic agent error:', error);
-
+    // Detailed error logging
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error('[MECHANIC API] Error:', errorMessage);
+    if (errorStack) {
+      console.error('[MECHANIC API] Stack:', errorStack);
+    }
     const isBillingError =
       errorMessage.includes('credit balance') || errorMessage.includes('billing');
     const isAuthError =

@@ -130,6 +130,13 @@ export function ConnectionLine({ connection }: ConnectionLineProps) {
 
   if (!points) return null;
 
+  // Guard against NaN positions (can happen during auto-connect before meshes fully load)
+  const hasNaN = points.some(p => isNaN(p.x) || isNaN(p.y) || isNaN(p.z));
+  if (hasNaN) {
+    console.warn(`[ConnectionLine] Skipping render — NaN position detected in connection ${connection.id}`);
+    return null;
+  }
+
   const midpoint = points[Math.floor(points.length / 2)];
 
   // Wire connections: thin gray lines, no labels in middle

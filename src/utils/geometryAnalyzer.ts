@@ -908,6 +908,15 @@ export function computeAutoConnections(
     };
     const gapDistance = Math.sqrt(gapVector.x ** 2 + gapVector.y ** 2 + gapVector.z ** 2);
 
+    // Validate snap position - skip if any value is NaN or Infinity
+    const isValidPosition = (v: Vec3) =>
+      Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+
+    if (!isValidPosition(snapPosition)) {
+      console.warn(`[AUTO-CONNECT] Skipping "${part.title}" — invalid snap position (NaN or Infinity)`);
+      continue;
+    }
+
     connections.push({
       fromId: anchorPart.nodeId,
       toId: part.nodeId,
