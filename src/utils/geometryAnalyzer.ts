@@ -710,17 +710,20 @@ function computeSnapPosition(
 }
 
 /**
- * Compute auto-connections between all loaded mesh nodes based on bounding box proximity.
+ * Compute auto-connections between all loaded mesh nodes using NAME-BASED assembly logic.
  *
  * For vertical assemblies (rockets, towers, etc.):
- * - Finds the largest part as the anchor (fuselage)
- * - Stacks parts above/below based on their names/types
- * - Nose cone goes on top, engine on bottom, fins on sides
+ * - Finds the part with "fuselage" or "body" in the title — that's the anchor
+ * - Finds "nose" or "cone" — goes on TOP of the anchor
+ * - Finds "engine" or "nozzle" — goes on BOTTOM of the anchor
+ * - Finds "fin" or "wing" or "stabilizer" — attaches to the LOWER THIRD of the anchor
+ *
+ * Does NOT rely on distance thresholds — uses part names to determine assembly order.
  */
 export function computeAutoConnections(
   nodes: Record<string, CanvasNode>,
   existingConnections: Record<string, CanvasConnection>,
-  proximityThreshold: number = 2.0
+  _proximityThreshold: number = 5.0 // Not used anymore, kept for API compatibility
 ): AutoConnection[] {
   const scene = _threeScene;
   if (!scene) {
@@ -730,7 +733,8 @@ export function computeAutoConnections(
 
   const nodeList = Object.values(nodes);
   if (nodeList.length < 2) {
-    return []; // Need at least 2 parts to connect
+    console.log('[AUTO-CONNECT] Need at least 2 parts to connect');
+    return [];
   }
 
   // Gather bounding box data for all nodes with loaded meshes
@@ -742,34 +746,50 @@ export function computeAutoConnections(
     size: Vec3;
     volume: number;
     meshFound: boolean;
+    role: 'anchor' | 'top' | 'bottom' | 'side' | 'unknown';
   }
 
   const parts: PartData[] = [];
+  console.log(`[AUTO-CONNECT] Analyzing ${nodeList.length} nodes...`);
 
   for (const node of nodeList) {
-    // Skip if already has connections
-    const hasConnection = Object.values(existingConnections).some(
-      (c) => c.fromId === node.id || c.toId === node.id
-    );
-
     const mesh = findMeshForNode(scene, node.id);
+    const title = node.title || node.content.slice(0, 30);
 
     if (mesh) {
       const bboxMetrics = computeBoundingBoxMetrics(mesh);
       const volume = bboxMetrics.size.x * bboxMetrics.size.y * bboxMetrics.size.z;
 
+      // Determine role from name FIRST
+      const normalizedTitle = title.toLowerCase();
+      let role: 'anchor' | 'top' | 'bottom' | 'side' | 'unknown' = 'unknown';
+
+      if (ROLE_PATTERNS.anchor.test(normalizedTitle)) {
+        role = 'anchor';
+      } else if (ROLE_PATTERNS.top.test(normalizedTitle)) {
+        role = 'top';
+      } else if (ROLE_PATTERNS.bottom.test(normalizedTitle)) {
+        role = 'bottom';
+      } else if (ROLE_PATTERNS.side.test(normalizedTitle)) {
+        role = 'side';
+      }
+
+      console.log(`[AUTO-CONNECT] Part "${title}" — role: ${role}, size: ${bboxMetrics.size.x.toFixed(2)}×${bboxMetrics.size.y.toFixed(2)}×${bboxMetrics.size.z.toFixed(2)}`);
+
       parts.push({
         nodeId: node.id,
-        title: node.title || node.content.slice(0, 30),
+        title,
         bbox: { min: bboxMetrics.min, max: bboxMetrics.max },
         center: bboxMetrics.center,
         size: bboxMetrics.size,
         volume,
         meshFound: true,
+        role,
       });
     } else if (node.meshLoading) {
-      // Mesh is still loading, skip for now
-      console.log(`[AUTO-CONNECT] Skipping ${node.title || node.id} — mesh still loading`);
+      console.log(`[AUTO-CONNECT] Skipping "${title}" — mesh still loading`);
+    } else {
+      console.log(`[AUTO-CONNECT] Skipping "${title}" — no mesh found`);
     }
   }
 
@@ -778,136 +798,146 @@ export function computeAutoConnections(
     return [];
   }
 
-  // Find the largest part (anchor/fuselage)
-  const maxVolume = Math.max(...parts.map((p) => p.volume));
-  const anchorPart = parts.find((p) => p.volume === maxVolume);
+  // Find the anchor part (by name first, then by largest volume)
+  let anchorPart = parts.find((p) => p.role === 'anchor');
+  if (!anchorPart) {
+    // Fall back to largest part
+    const maxVolume = Math.max(...parts.map((p) => p.volume));
+    anchorPart = parts.find((p) => p.volume === maxVolume);
+    if (anchorPart) {
+      anchorPart.role = 'anchor';
+      console.log(`[AUTO-CONNECT] No anchor found by name, using largest part: "${anchorPart.title}"`);
+    }
+  }
 
   if (!anchorPart) {
+    console.log('[AUTO-CONNECT] Could not determine anchor part');
     return [];
   }
 
-  // Classify parts by role
-  const partRoles = new Map<string, 'anchor' | 'top' | 'bottom' | 'side' | 'unknown'>();
+  console.log(`[AUTO-CONNECT] Anchor: "${anchorPart.title}" at Y=${anchorPart.center.y.toFixed(2)}`);
 
-  for (const part of parts) {
-    const aspectRatio = {
-      heightToWidth: part.size.y / Math.max(part.size.x, 0.01),
-      heightToDepth: part.size.y / Math.max(part.size.z, 0.01),
-    };
-    const role = inferPartRole(part.title, part.volume, maxVolume, aspectRatio);
-    partRoles.set(part.nodeId, role);
-  }
-
-  // Build connections
+  // Build connections based on roles
   const connections: AutoConnection[] = [];
-  const connectedParts = new Set<string>();
 
-  // First, connect non-anchor parts to the anchor
+  // Get anchor dimensions
+  const anchorHeight = anchorPart.size.y;
+  const anchorTopY = anchorPart.bbox.max.y;
+  const anchorBottomY = anchorPart.bbox.min.y;
+  const anchorCenterX = (anchorPart.bbox.min.x + anchorPart.bbox.max.x) / 2;
+  const anchorCenterZ = (anchorPart.bbox.min.z + anchorPart.bbox.max.z) / 2;
+
   for (const part of parts) {
     if (part.nodeId === anchorPart.nodeId) continue;
 
-    const role = partRoles.get(part.nodeId) || 'unknown';
-    const facePair = findBestFacePair(anchorPart.bbox, part.bbox);
+    // Check if already connected
+    const hasConnection = Object.values(existingConnections).some(
+      (c) => c.fromId === part.nodeId || c.toId === part.nodeId
+    );
+    if (hasConnection) {
+      console.log(`[AUTO-CONNECT] Skipping "${part.title}" — already connected`);
+      continue;
+    }
 
-    if (facePair.distance <= proximityThreshold) {
-      const snapPosition = computeSnapPosition(
+    const partHalfHeight = part.size.y / 2;
+    const oldY = part.center.y;
+    let snapPosition: Vec3;
+    let facePair: { fromFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back'; toFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back' };
+    let connectionType: 'vertical' | 'horizontal' | 'radial';
+
+    if (part.role === 'top') {
+      // Nose cone: move to anchor top face center + part half-height
+      const newY = anchorTopY + partHalfHeight;
+      snapPosition = {
+        x: anchorCenterX,
+        y: newY,
+        z: anchorCenterZ,
+      };
+      facePair = { fromFace: 'top', toFace: 'bottom' };
+      connectionType = 'vertical';
+      console.log(`[AUTO-CONNECT] Snapping "${part.title}" to TOP of "${anchorPart.title}" (moving Y from ${oldY.toFixed(2)} to ${newY.toFixed(2)})`);
+
+    } else if (part.role === 'bottom') {
+      // Engine: move to anchor bottom face center - part half-height
+      const newY = anchorBottomY - partHalfHeight;
+      snapPosition = {
+        x: anchorCenterX,
+        y: newY,
+        z: anchorCenterZ,
+      };
+      facePair = { fromFace: 'bottom', toFace: 'top' };
+      connectionType = 'vertical';
+      console.log(`[AUTO-CONNECT] Snapping "${part.title}" to BOTTOM of "${anchorPart.title}" (moving Y from ${oldY.toFixed(2)} to ${newY.toFixed(2)})`);
+
+    } else if (part.role === 'side') {
+      // Fins: attach to lower third of anchor, offset on Z axis
+      const finY = anchorBottomY + anchorHeight * 0.25; // Lower quarter
+      const finZ = anchorPart.bbox.max.z + part.size.z / 2; // Offset behind anchor
+      snapPosition = {
+        x: anchorCenterX,
+        y: finY,
+        z: finZ,
+      };
+      facePair = { fromFace: 'back', toFace: 'front' };
+      connectionType = 'radial';
+      console.log(`[AUTO-CONNECT] Snapping "${part.title}" to SIDE of "${anchorPart.title}" (moving to Y=${finY.toFixed(2)}, Z=${finZ.toFixed(2)})`);
+
+    } else {
+      // Unknown role: use best face pair based on current position
+      const bestFacePair = findBestFacePair(anchorPart.bbox, part.bbox);
+      snapPosition = computeSnapPosition(
         anchorPart.bbox,
         part.bbox,
-        facePair.fromFace,
-        facePair.toFace,
+        bestFacePair.fromFace,
+        bestFacePair.toFace,
         part.center
       );
-
-      // Determine connection type
-      let connectionType: 'vertical' | 'horizontal' | 'radial' = 'horizontal';
-      if (facePair.fromFace === 'top' || facePair.fromFace === 'bottom') {
-        connectionType = 'vertical';
-      } else if (role === 'side') {
-        connectionType = 'radial';
-      }
-
-      connections.push({
-        fromId: anchorPart.nodeId,
-        toId: part.nodeId,
-        fromTitle: anchorPart.title,
-        toTitle: part.title,
-        snapPosition,
-        gapVector: facePair.gapVector,
-        gapDistance: facePair.distance,
-        facePair: {
-          fromFace: facePair.fromFace,
-          toFace: facePair.toFace,
-        },
-        connectionType,
-        role,
-      });
-
-      connectedParts.add(part.nodeId);
+      facePair = {
+        fromFace: bestFacePair.fromFace,
+        toFace: bestFacePair.toFace,
+      };
+      connectionType = (bestFacePair.fromFace === 'top' || bestFacePair.fromFace === 'bottom') ? 'vertical' : 'horizontal';
+      console.log(`[AUTO-CONNECT] Snapping "${part.title}" (unknown role) to "${anchorPart.title}" using best face pair: ${facePair.fromFace}→${facePair.toFace}`);
     }
+
+    // Calculate gap vector from current position to snap position
+    const gapVector = {
+      x: snapPosition.x - part.center.x,
+      y: snapPosition.y - part.center.y,
+      z: snapPosition.z - part.center.z,
+    };
+    const gapDistance = Math.sqrt(gapVector.x ** 2 + gapVector.y ** 2 + gapVector.z ** 2);
+
+    connections.push({
+      fromId: anchorPart.nodeId,
+      toId: part.nodeId,
+      fromTitle: anchorPart.title,
+      toTitle: part.title,
+      snapPosition,
+      gapVector,
+      gapDistance,
+      facePair,
+      connectionType,
+      role: part.role,
+    });
   }
 
-  // For parts not connected to anchor, check proximity to any other part
-  for (const partA of parts) {
-    if (connectedParts.has(partA.nodeId) || partA.nodeId === anchorPart.nodeId) continue;
-
-    for (const partB of parts) {
-      if (partA.nodeId === partB.nodeId) continue;
-      if (!connectedParts.has(partB.nodeId) && partB.nodeId !== anchorPart.nodeId) continue;
-
-      const facePair = findBestFacePair(partB.bbox, partA.bbox);
-
-      if (facePair.distance <= proximityThreshold) {
-        const snapPosition = computeSnapPosition(
-          partB.bbox,
-          partA.bbox,
-          facePair.fromFace,
-          facePair.toFace,
-          partA.center
-        );
-
-        const role = partRoles.get(partA.nodeId) || 'unknown';
-        let connectionType: 'vertical' | 'horizontal' | 'radial' = 'horizontal';
-        if (facePair.fromFace === 'top' || facePair.fromFace === 'bottom') {
-          connectionType = 'vertical';
-        }
-
-        connections.push({
-          fromId: partB.nodeId,
-          toId: partA.nodeId,
-          fromTitle: partB.title,
-          toTitle: partA.title,
-          snapPosition,
-          gapVector: facePair.gapVector,
-          gapDistance: facePair.distance,
-          facePair: {
-            fromFace: facePair.fromFace,
-            toFace: facePair.toFace,
-          },
-          connectionType,
-          role,
-        });
-
-        connectedParts.add(partA.nodeId);
-        break; // Found a connection for this part
-      }
-    }
-  }
-
-  // Sort connections: anchor connections first, then by role priority
+  // Sort connections: bottom first, then top, then sides
   const rolePriority: Record<string, number> = {
-    anchor: 0,
-    bottom: 1,
-    top: 2,
-    side: 3,
-    unknown: 4,
+    bottom: 0,
+    top: 1,
+    side: 2,
+    unknown: 3,
+    anchor: 4,
   };
 
   connections.sort((a, b) => {
-    const priorityA = rolePriority[a.role] ?? 4;
-    const priorityB = rolePriority[b.role] ?? 4;
+    const priorityA = rolePriority[a.role] ?? 3;
+    const priorityB = rolePriority[b.role] ?? 3;
     return priorityA - priorityB;
   });
 
+  console.log(`[AUTO-CONNECT] Created ${connections.length} connections`);
   return connections;
 }
 
