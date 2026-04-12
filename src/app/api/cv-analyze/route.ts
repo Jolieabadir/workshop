@@ -168,28 +168,46 @@ function checkPythonSetup(): { ok: boolean; error?: string } {
 export async function POST(request: NextRequest) {
   try {
     // Parse request body
-    const body = (await request.json()) as AnalyzeRequest;
+    const body = await request.json();
 
     if (!body.frames || !Array.isArray(body.frames) || body.frames.length === 0) {
+      console.error('[CV-ANALYZE] Invalid request: frames missing or empty');
       return NextResponse.json(
         { error: 'Request must include frames array with at least one frame' },
         { status: 400 }
       );
     }
 
-    // Validate frames
-    for (const frame of body.frames) {
-      if (!frame.name || typeof frame.name !== 'string') {
-        return NextResponse.json(
-          { error: 'Each frame must have a name string' },
-          { status: 400 }
-        );
-      }
-      if (!frame.image || typeof frame.image !== 'string') {
-        return NextResponse.json(
-          { error: 'Each frame must have an image string (base64 PNG)' },
-          { status: 400 }
-        );
+    // Normalize frames - accept either string[] or {name, image}[]
+    let normalizedFrames: InputFrame[];
+
+    if (typeof body.frames[0] === 'string') {
+      // Frames are just base64 strings - wrap with generated names
+      console.log('[CV-ANALYZE] Received string[] frames, normalizing...');
+      normalizedFrames = (body.frames as string[]).map((image, i) => ({
+        name: `frame_${i}`,
+        image,
+      }));
+    } else {
+      // Frames are already {name, image} objects
+      normalizedFrames = body.frames as InputFrame[];
+
+      // Validate object format
+      for (const frame of normalizedFrames) {
+        if (!frame.name || typeof frame.name !== 'string') {
+          console.error('[CV-ANALYZE] Invalid frame: missing name');
+          return NextResponse.json(
+            { error: 'Each frame must have a name string' },
+            { status: 400 }
+          );
+        }
+        if (!frame.image || typeof frame.image !== 'string') {
+          console.error('[CV-ANALYZE] Invalid frame: missing image');
+          return NextResponse.json(
+            { error: 'Each frame must have an image string (base64 PNG)' },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -202,11 +220,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[CV-ANALYZE] Processing ${body.frames.length} frames...`);
+    console.log(`[CV-ANALYZE] Processing ${normalizedFrames.length} frames...`);
     const startTime = Date.now();
 
     // Run Python analysis
-    const results = await runPythonAnalysis(body.frames);
+    const results = await runPythonAnalysis(normalizedFrames);
 
     const elapsed = Date.now() - startTime;
     console.log(`[CV-ANALYZE] Analysis complete in ${elapsed}ms`);
