@@ -1,7 +1,7 @@
 'use client';
 
-import { useRef } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { useRef, useEffect } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
@@ -14,6 +14,7 @@ import { MechanicAvatar, CorrectionHighlights } from './MechanicAvatar';
 import { HandCursor } from './HandCursor';
 import { SpatialEngine } from './SpatialEngine';
 import { SceneCapture } from './SceneCapture';
+import { registerScene, unregisterScene } from '@/utils/geometryAnalyzer';
 
 // Smoothing factor for camera movement (lower = smoother)
 const CAMERA_SMOOTHING = 0.04;
@@ -84,12 +85,29 @@ function HandControlledOrbitControls() {
   );
 }
 
+/**
+ * Registers the Three.js scene for geometry analysis.
+ */
+function SceneRegistrar() {
+  const { scene } = useThree();
+
+  useEffect(() => {
+    registerScene(scene);
+    return () => unregisterScene();
+  }, [scene]);
+
+  return null;
+}
+
 function SceneContent() {
   const nodes = useCanvasStore((s) => s.nodes);
   const connections = useCanvasStore((s) => s.connections);
 
   return (
     <>
+      {/* Register scene for geometry analysis */}
+      <SceneRegistrar />
+
       {/* Scene background color (Three.js level, not CSS) */}
       <color attach="background" args={['#e8e8f0']} />
       <fog attach="fog" args={['#e8e8f0', 20, 60]} />

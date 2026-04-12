@@ -45,6 +45,8 @@ interface MechanicRequest {
   cvMetrics: CVMetrics;
   canvasState: CanvasState;
   frames: string[]; // base64 PNG images of the rendered scene
+  /** Optional: Exact 3D geometry measurements from Three.js scene */
+  geometryContext?: string;
 }
 
 function formatCanvasStateForMechanic(state: CanvasState): string {
@@ -134,7 +136,7 @@ function formatCVMetrics(metrics: CVMetrics): string {
 export async function POST(request: NextRequest) {
   try {
     const body: MechanicRequest = await request.json();
-    const { owlEvaluation, cvMetrics, canvasState, frames } = body;
+    const { owlEvaluation, cvMetrics, canvasState, frames, geometryContext } = body;
 
     // Skip if no evaluation to process
     if (!owlEvaluation || !owlEvaluation.partEvaluations) {
@@ -177,8 +179,14 @@ export async function POST(request: NextRequest) {
 
     // Build user message with all context
     let userMessage = `${canvasContext}\n\n${metricsContext}\n\n`;
+
+    // Add exact 3D geometry measurements if provided
+    if (geometryContext) {
+      userMessage += `${geometryContext}\n\n`;
+    }
+
     userMessage += `${owlContext}\n\n`;
-    userMessage += `---\n\nBased on the Owl's evaluation and CV metrics above, apply the necessary spatial corrections to fix the assembly issues.`;
+    userMessage += `---\n\nBased on the Owl's evaluation, CV metrics, and exact 3D geometry measurements above, apply the necessary spatial corrections to fix the assembly issues. Use the EXACT measurements from the geometry analysis to calculate precise rotation angles and positions.`;
 
     // Build image content blocks from frames
     const imageBlocks: Anthropic.ImageBlockParam[] = frames

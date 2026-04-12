@@ -32,6 +32,8 @@ interface OwlRequest {
   frames?: string[];
   /** Optional: OpenCV analysis results */
   cvMetrics?: CVMetrics;
+  /** Optional: Exact 3D geometry measurements from Three.js scene */
+  geometryContext?: string;
 }
 
 function formatCanvasStateForOwl(state: CanvasState): string {
@@ -120,7 +122,7 @@ function parseOwlToolCalls(content: Anthropic.ContentBlock[]): OwlAnalysisResult
 export async function POST(request: NextRequest) {
   try {
     const body: OwlRequest = await request.json();
-    const { canvasState, recentTranscripts, frames, cvMetrics } = body;
+    const { canvasState, recentTranscripts, frames, cvMetrics, geometryContext } = body;
 
     // Skip analysis if canvas is empty
     const nodeCount = Object.keys(canvasState.nodes).length;
@@ -141,6 +143,11 @@ export async function POST(request: NextRequest) {
     if (cvMetrics) {
       textContent += '\n\n---\n\n## OpenCV Analysis:\n';
       textContent += JSON.stringify(cvMetrics, null, 2);
+    }
+
+    // Add exact 3D geometry measurements if provided
+    if (geometryContext) {
+      textContent += '\n\n---\n\n' + geometryContext;
     }
 
     // Different prompts for visual vs text-only mode

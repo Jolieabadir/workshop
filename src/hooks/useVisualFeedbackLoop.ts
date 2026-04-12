@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
 import { parseToolCallToAction } from '@/agents/builder/action-parser';
 import { getCaptureFrames } from '@/components/canvas/SceneCapture';
+import { analyzeGeometry, formatGeometryForPrompt, type GeometryAnalysis } from '@/utils/geometryAnalyzer';
 import type { BuilderAction, CanvasState } from '@/core/types';
 
 const MAX_ITERATIONS = 5;
@@ -140,14 +141,33 @@ export function useVisualFeedbackLoop() {
   }, []);
 
   /**
+   * Run geometry analysis on the current scene.
+   * Returns exact 3D measurements from Three.js scene graph.
+   */
+  const runGeometryAnalysis = useCallback((): GeometryAnalysis | null => {
+    const { nodes, connections } = useCanvasStore.getState();
+    const analysis = analyzeGeometry(nodes, connections);
+
+    if (analysis) {
+      console.log(`[FEEDBACK LOOP] Geometry analysis: ${analysis.parts.length} parts, ${analysis.connections.length} connections`);
+    }
+
+    return analysis;
+  }, []);
+
+  /**
    * Call Owl agent to evaluate the assembly visually.
    */
   const getOwlEvaluation = useCallback(async (
     frames: string[],
     cvMetrics: CVMetrics | null,
-    canvasState: CanvasState
+    canvasState: CanvasState,
+    geometryAnalysis: GeometryAnalysis | null
   ): Promise<OwlEvaluation | null> => {
     try {
+      // Format geometry for prompt if available
+      const geometryContext = geometryAnalysis ? formatGeometryForPrompt(geometryAnalysis) : null;
+
       const response = await fetch('/api/agents/owl', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -155,6 +175,7 @@ export function useVisualFeedbackLoop() {
           canvasState,
           frames,
           cvMetrics,
+          geometryContext, // Exact 3D measurements
         }),
       });
 
@@ -192,9 +213,13 @@ export function useVisualFeedbackLoop() {
     owlEvaluation: OwlEvaluation,
     frames: string[],
     cvMetrics: CVMetrics | null,
-    canvasState: CanvasState
+    canvasState: CanvasState,
+    geometryAnalysis: GeometryAnalysis | null
   ): Promise<BuilderAction[]> => {
     try {
+      // Format geometry for prompt if available
+      const geometryContext = geometryAnalysis ? formatGeometryForPrompt(geometryAnalysis) : null;
+
       const response = await fetch('/api/agents/mechanic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -203,6 +228,7 @@ export function useVisualFeedbackLoop() {
           frames,
           cvMetrics,
           canvasState,
+          geometryContext, // Exact 3D measurements
         }),
       });
 
@@ -377,9 +403,15 @@ export function useVisualFeedbackLoop() {
           console.log('[FEEDBACK LOOP] CV metrics received');
         }
 
+        // Step 2.5: Run geometry analysis on Three.js scene graph
+        const geometryAnalysis = runGeometryAnalysis();
+        if (geometryAnalysis) {
+          console.log(`[FEEDBACK LOOP] Geometry analysis: ${geometryAnalysis.parts.length} parts with exact 3D measurements`);
+        }
+
         // Step 3: Get Owl evaluation
         const canvasState = getCanvasState();
-        const owlEvaluation = await getOwlEvaluation(frames, cvMetrics, canvasState);
+        const owlEvaluation = await getOwlEvaluation(frames, cvMetrics, canvasState, geometryAnalysis);
 
         if (!owlEvaluation) {
           console.error('[FEEDBACK LOOP] Owl evaluation failed, stopping');
@@ -407,7 +439,8 @@ export function useVisualFeedbackLoop() {
           owlEvaluation,
           frames,
           cvMetrics,
-          canvasState
+          canvasState,
+          geometryAnalysis
         );
 
         if (corrections.length === 0) {
@@ -447,6 +480,7 @@ export function useVisualFeedbackLoop() {
   }, [
     captureFrames,
     analyzeCVMetrics,
+    runGeometryAnalysis,
     getCanvasState,
     getOwlEvaluation,
     isApproved,
