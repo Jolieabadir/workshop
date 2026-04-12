@@ -48,8 +48,14 @@ export function TranscriptBar({
     isRunning: isFixingAssembly,
     currentIteration,
     maxIterations,
+    lastEvaluation,
     triggerVisualFeedbackLoop,
   } = useVisualFeedbackLoop();
+
+  // Derive Owl verdict display
+  const owlVerdict = lastEvaluation?.assemblyVerdict;
+  const issueCount = owlVerdict?.issueCount ??
+    lastEvaluation?.partEvaluations?.filter((p) => p.issue !== 'none').length ?? 0;
 
   const handleFixAssembly = async () => {
     if (isFixingAssembly) return;
@@ -247,9 +253,30 @@ export function TranscriptBar({
             }}
           >
             {isFixingAssembly
-              ? `Owl evaluating... (${currentIteration}/${maxIterations})`
-              : 'Fix Assembly'}
+              ? `🔧 Fixing... (${currentIteration}/${maxIterations})`
+              : '🔧 Fix Assembly'}
           </button>
+          {/* Owl verdict display */}
+          {lastEvaluation && !isFixingAssembly && (
+            <span
+              style={{
+                fontSize: '11px',
+                padding: '6px 10px',
+                borderRadius: '8px',
+                background: owlVerdict?.verdict === 'APPROVED'
+                  ? 'rgba(34, 197, 94, 0.15)'
+                  : 'rgba(239, 68, 68, 0.15)',
+                border: `1px solid ${owlVerdict?.verdict === 'APPROVED'
+                  ? 'rgba(34, 197, 94, 0.4)'
+                  : 'rgba(239, 68, 68, 0.4)'}`,
+                color: owlVerdict?.verdict === 'APPROVED' ? '#4ade80' : '#f87171',
+              }}
+            >
+              {owlVerdict?.verdict === 'APPROVED'
+                ? '🦉 APPROVED ✓'
+                : `🦉 NOT APPROVED — ${issueCount} issue${issueCount !== 1 ? 's' : ''}`}
+            </span>
+          )}
           <button onClick={() => addNode('text_card', 'New idea', 'Untitled')} style={btnStyle}>
             + Add card
           </button>
