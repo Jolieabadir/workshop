@@ -185,41 +185,15 @@ EXAMPLE — "Build a rocket":
 Think: "What are the structural sections of ONE rocket?"
 → Nose cone (top), Fuselage body (middle), Fin set (bottom sides), Engine nozzle (bottom center)
 
-  generate_mesh({
-    prompt: "conical rocket nose cone, white metallic, pointed tip",
-    title: "Nose Cone",
-    position: {x:0, y:3, z:0},
-    virtualPorts: [{ name: "bottom", position: {x:0, y:-1, z:0}, direction: {x:0, y:-1, z:0} }]
-  })
-  generate_mesh({
-    prompt: "cylindrical rocket fuselage, white with rivet lines, open ends",
-    title: "Fuselage",
-    position: {x:0, y:1.5, z:0},
-    virtualPorts: [
-      { name: "top", position: {x:0, y:1, z:0}, direction: {x:0, y:1, z:0} },
-      { name: "bottom", position: {x:0, y:-1, z:0}, direction: {x:0, y:-1, z:0} }
-    ]
-  })
-  generate_mesh({
-    prompt: "set of four triangular rocket fins, red metallic, radial",
-    title: "Fins",
-    position: {x:0, y:0.5, z:0},
-    virtualPorts: [
-      { name: "top", position: {x:0, y:1, z:0}, direction: {x:0, y:1, z:0} },
-      { name: "bottom", position: {x:0, y:-1, z:0}, direction: {x:0, y:-1, z:0} }
-    ]
-  })
-  generate_mesh({
-    prompt: "rocket engine bell nozzle, gunmetal with heat discoloration",
-    title: "Engine",
-    position: {x:0, y:0, z:0},
-    virtualPorts: [{ name: "top", position: {x:0, y:1, z:0}, direction: {x:0, y:1, z:0} }]
-  })
-  create_connection: fromId="Nose Cone", toId="Fuselage", fromPort="bottom", toPort="top", label="attached"
-  create_connection: fromId="Fuselage", toId="Fins", fromPort="bottom", toPort="top", label="mounted"
-  create_connection: fromId="Fins", toId="Engine", fromPort="bottom", toPort="top", label="attached"
+NOTE: See "ROCKET SHIP — USE THESE EXACT PROMPTS" section below for the CACHED prompts to use.
+The auto-connect system will snap parts together automatically, so positions and connections are optional.
+
+  generate_mesh({ prompt: "conical rocket nose cone, white metallic, pointed tip", title: "Nose Cone", position: {x:0, y:0, z:0} })
+  generate_mesh({ prompt: "cylindrical rocket fuselage, white with panel lines, open ends", title: "Fuselage", position: {x:0, y:0, z:0} })
+  generate_mesh({ prompt: "set of four triangular rocket fins, red metallic, radial arrangement", title: "Fins", position: {x:0, y:0, z:0} })
+  generate_mesh({ prompt: "rocket engine bell nozzle, dark metallic with heat discoloration", title: "Engine", position: {x:0, y:0, z:0} })
   group_nodes: nodeIds=[noseCone, fuselage, fins, engine], label="Rocket"
-  respond_verbally: "Built your rocket — nose cone, fuselage, fins, and engine all connected."
+  respond_verbally: "Built your rocket — nose cone, fuselage, fins, and engine."
 
 EXAMPLE — "Build a car":
 
@@ -270,6 +244,37 @@ Think: "What are the structural sections of ONE robot?"
   generate_mesh({ prompt: "robot feet pair, wide bases, metallic", title: "Feet", ... })
   (... connect head→torso, arms→torso, legs→torso, feet→legs ...)
   group_nodes: nodeIds=[head, torso, arms, legs, feet], label="Robot"
+
+═══════════════════════════════════════════════════════════════
+ROCKET SHIP — USE THESE EXACT PROMPTS (CACHED FOR INSTANT LOAD)
+═══════════════════════════════════════════════════════════════
+
+When the user says "build a rocket", "build a rocketship", "build a rocket ship", "make a rocket", or similar, use EXACTLY these prompts verbatim. Do not rephrase, add details, or modify them. These prompts have cached 3D models that load instantly instead of taking 10+ seconds:
+
+  generate_mesh({
+    prompt: "conical rocket nose cone, white metallic, pointed tip",
+    title: "Nose Cone",
+    position: {x:0, y:0, z:0}
+  })
+  generate_mesh({
+    prompt: "cylindrical rocket fuselage, white with panel lines, open ends",
+    title: "Fuselage",
+    position: {x:0, y:0, z:0}
+  })
+  generate_mesh({
+    prompt: "set of four triangular rocket fins, red metallic, radial arrangement",
+    title: "Fins",
+    position: {x:0, y:0, z:0}
+  })
+  generate_mesh({
+    prompt: "rocket engine bell nozzle, dark metallic with heat discoloration",
+    title: "Engine",
+    position: {x:0, y:0, z:0}
+  })
+  group_nodes: nodeIds=[noseCone, fuselage, fins, engine], label="Rocket"
+  respond_verbally: "Built your rocket with nose cone, fuselage, fins, and engine."
+
+IMPORTANT: Copy these prompts CHARACTER FOR CHARACTER. Even small changes like "white metallic" vs "metallic white" will cause a cache miss and waste API credits. The auto-connect system will snap the parts together automatically.
 
 ═══════════════════════════════════════════════════════════════
 DECOMPOSITION ANTI-PATTERNS — NEVER DO THESE
