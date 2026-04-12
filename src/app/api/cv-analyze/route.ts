@@ -1,13 +1,17 @@
 /**
- * CV-Analyze API Route
+ * CV-Analyze API Route — Multi-View Triangulation
  *
- * Accepts captured scene frames and runs OpenCV analysis via a Python subprocess.
- * Returns structured spatial metrics: gaps between parts, orientation errors, scale ratios.
+ * Accepts captured scene frames (front, side, top) and runs OpenCV analysis via Python.
+ * Performs cross-view triangulation to estimate 3D spatial properties:
+ * - Part matching across views by color histogram similarity
+ * - 3D orientation estimation (which axis a part is rotated on)
+ * - 3D gap estimation by triangulating 2D measurements
+ * - Volumetric scale ratios
  *
  * POST /api/cv-analyze
- * Body: { frames: [{ name: string, image: string }] }
+ * Body: { frames: [{ name: string, image: string }] } or { frames: string[] }
  *
- * Returns: { results: AnalysisResult[] } or { error: string }
+ * Returns: { per_frame, matched_parts_count, spatial_3d } or { error: string }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,34 +20,66 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-/** Gap between two detected parts */
+/** Per-frame part info */
+interface PartInfo {
+  index: number;
+  centroid: [number, number];
+  bounding_box: [number, number, number, number];
+  area_px: number;
+  orientation_deg: number;
+  elongation: number;
+}
+
+/** Gap between two parts in a single view */
 interface GapInfo {
   between_indices: [number, number];
   gap_px: number;
   direction: 'horizontal' | 'vertical' | 'diagonal';
 }
 
-/** Orientation of a detected part */
-interface OrientationInfo {
-  contour_index: number;
-  principal_axis_deg: number;
-  area_px: number;
-}
-
-/** Scale ratio between two parts */
-interface ScaleRatioInfo {
-  indices: [number, number];
-  area_ratio: number;
-}
-
-/** Analysis result for a single frame */
+/** Per-frame analysis result */
 export interface FrameAnalysisResult {
   frame_name: string;
+  image_size: [number, number];
   parts_detected: number;
+  parts: PartInfo[];
   gaps: GapInfo[];
-  orientations: OrientationInfo[];
-  scale_ratios: ScaleRatioInfo[];
-  visual_coherence: number;
+  error?: string;
+}
+
+/** Estimated 3D rotation for a part */
+interface EstimatedRotation {
+  part_index: number;
+  axis: 'x' | 'y' | 'z';
+  angle_deg: number;
+  confidence: number;
+  reason: string;
+}
+
+/** 3D gap between two parts */
+interface Gap3D {
+  between_parts: [number, number];
+  distance_units: number;
+  direction_3d: [number, number, number];
+  views_used: string[];
+}
+
+/** 3D scale info for a part */
+interface Scale3D {
+  part_index: number;
+  volume_ratio: number;
+  areas_by_view: Record<string, number>;
+}
+
+/** Full multi-view analysis result */
+export interface MultiViewAnalysisResult {
+  per_frame: FrameAnalysisResult[];
+  matched_parts_count: number;
+  spatial_3d: {
+    estimated_rotations: EstimatedRotation[];
+    gaps_3d: Gap3D[];
+    scale_3d: Scale3D[];
+  };
   error?: string;
 }
 
@@ -65,9 +101,9 @@ const PYTHON_SCRIPT_PATH = path.join(process.cwd(), 'src/app/api/cv-analyze/anal
 const SUBPROCESS_TIMEOUT_MS = 30000;
 
 /**
- * Run the Python OpenCV analysis script
+ * Run the Python OpenCV multi-view analysis script
  */
-async function runPythonAnalysis(frames: InputFrame[]): Promise<FrameAnalysisResult[]> {
+async function runPythonAnalysis(frames: InputFrame[]): Promise<MultiViewAnalysisResult> {
   return new Promise((resolve, reject) => {
     // Create a temp file to pass the frames data
     const tempDir = os.tmpdir();
@@ -122,7 +158,7 @@ async function runPythonAnalysis(frames: InputFrame[]): Promise<FrameAnalysisRes
       }
 
       try {
-        const results = JSON.parse(stdout) as FrameAnalysisResult[];
+        const results = JSON.parse(stdout) as MultiViewAnalysisResult;
         resolve(results);
       } catch (parseError) {
         console.error('[CV-ANALYZE] Failed to parse Python output:', stdout);
@@ -220,16 +256,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[CV-ANALYZE] Processing ${normalizedFrames.length} frames...`);
+    console.log(`[CV-ANALYZE] Processing ${normalizedFrames.length} frames with multi-view triangulation...`);
     const startTime = Date.now();
 
-    // Run Python analysis
-    const results = await runPythonAnalysis(normalizedFrames);
+    // Run Python analysis with multi-view triangulation
+    const result = await runPythonAnalysis(normalizedFrames);
 
     const elapsed = Date.now() - startTime;
-    console.log(`[CV-ANALYZE] Analysis complete in ${elapsed}ms`);
+    const rotations = result.spatial_3d?.estimated_rotations?.length ?? 0;
+    const gaps = result.spatial_3d?.gaps_3d?.length ?? 0;
+    console.log(`[CV-ANALYZE] Analysis complete in ${elapsed}ms — ${result.matched_parts_count} matched parts, ${rotations} rotation estimates, ${gaps} 3D gaps`);
 
-    return NextResponse.json({ results });
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[CV-ANALYZE] Error:', message);
