@@ -21,8 +21,27 @@ interface CVMetrics {
   [key: string]: unknown;
 }
 
+interface OwlEvaluation {
+  badges?: Array<{ nodeId: string; badgeType: string; message: string }>;
+  suggestedConnections?: Array<{ fromId: string; toId: string; reason: string }>;
+  partEvaluations?: Array<{
+    nodeId: string;
+    partName: string;
+    issue: string;
+    severity: string;
+    details: string;
+    suggestedFix?: string;
+  }>;
+  assemblyVerdict?: {
+    verdict: 'APPROVED' | 'NOT_APPROVED';
+    coherenceScore?: number;
+    summary: string;
+    issueCount: number;
+  } | null;
+}
+
 interface MechanicRequest {
-  owlEvaluation: string;
+  owlEvaluation: OwlEvaluation;
   cvMetrics: CVMetrics;
   canvasState: CanvasState;
   frames: string[]; // base64 PNG images of the rendered scene
@@ -118,7 +137,7 @@ export async function POST(request: NextRequest) {
     const { owlEvaluation, cvMetrics, canvasState, frames } = body;
 
     // Skip if no evaluation to process
-    if (!owlEvaluation || owlEvaluation.trim() === '') {
+    if (!owlEvaluation || !owlEvaluation.partEvaluations) {
       return NextResponse.json({ actions: [] });
     }
 
@@ -126,9 +145,39 @@ export async function POST(request: NextRequest) {
     const canvasContext = formatCanvasStateForMechanic(canvasState);
     const metricsContext = formatCVMetrics(cvMetrics || {});
 
+    // Format Owl evaluation into readable text
+    let owlContext = '## Owl\'s Visual Evaluation\n\n';
+
+    if (owlEvaluation.assemblyVerdict) {
+      const v = owlEvaluation.assemblyVerdict;
+      owlContext += `**Assembly Verdict:** ${v.verdict}\n`;
+      owlContext += `**Summary:** ${v.summary}\n`;
+      owlContext += `**Issue Count:** ${v.issueCount}\n\n`;
+    }
+
+    if (owlEvaluation.partEvaluations && owlEvaluation.partEvaluations.length > 0) {
+      owlContext += '### Part Evaluations:\n';
+      for (const part of owlEvaluation.partEvaluations) {
+        owlContext += `- **${part.partName}** (${part.nodeId})\n`;
+        owlContext += `  Issue: ${part.issue} (${part.severity})\n`;
+        owlContext += `  Details: ${part.details}\n`;
+        if (part.suggestedFix) {
+          owlContext += `  Suggested Fix: ${part.suggestedFix}\n`;
+        }
+        owlContext += '\n';
+      }
+    }
+
+    if (owlEvaluation.suggestedConnections && owlEvaluation.suggestedConnections.length > 0) {
+      owlContext += '### Suggested Connections:\n';
+      for (const conn of owlEvaluation.suggestedConnections) {
+        owlContext += `- ${conn.fromId} -> ${conn.toId}: ${conn.reason}\n`;
+      }
+    }
+
     // Build user message with all context
     let userMessage = `${canvasContext}\n\n${metricsContext}\n\n`;
-    userMessage += `## Owl's Visual Evaluation\n${owlEvaluation}\n\n`;
+    userMessage += `${owlContext}\n\n`;
     userMessage += `---\n\nBased on the Owl's evaluation and CV metrics above, apply the necessary spatial corrections to fix the assembly issues.`;
 
     // Build image content blocks from frames
