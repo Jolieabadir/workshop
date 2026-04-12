@@ -245,31 +245,44 @@ export function TranscriptBar({
             onClick={handleFixAssembly}
             disabled={isFixingAssembly}
             style={{
-              ...btnStyle,
-              background: isFixingAssembly ? 'rgba(168, 85, 247, 0.3)' : 'rgba(168, 85, 247, 0.2)',
-              borderColor: isFixingAssembly ? 'rgba(168, 85, 247, 0.6)' : 'rgba(168, 85, 247, 0.4)',
-              color: isFixingAssembly ? '#c4b5fd' : '#a78bfa',
+              fontSize: '13px',
+              fontWeight: 600,
+              padding: '10px 18px',
+              borderRadius: '10px',
+              border: `2px solid ${isFixingAssembly ? 'rgba(99, 102, 241, 0.8)' : 'rgba(99, 102, 241, 0.6)'}`,
+              background: isFixingAssembly
+                ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(139, 92, 246, 0.4))'
+                : 'linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.25))',
+              color: '#fff',
               cursor: isFixingAssembly ? 'wait' : 'pointer',
+              boxShadow: isFixingAssembly
+                ? '0 0 20px rgba(139, 92, 246, 0.6), inset 0 0 10px rgba(139, 92, 246, 0.3)'
+                : '0 0 12px rgba(99, 102, 241, 0.4)',
+              transition: 'all 0.2s ease',
             }}
           >
             {isFixingAssembly
               ? `🔧 Fixing... (${currentIteration}/${maxIterations})`
-              : '🔧 Fix Assembly'}
+              : '🦉 Fix Assembly'}
           </button>
           {/* Owl verdict display */}
           {lastEvaluation && !isFixingAssembly && (
             <span
               style={{
-                fontSize: '11px',
-                padding: '6px 10px',
-                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 600,
+                padding: '10px 14px',
+                borderRadius: '10px',
                 background: owlVerdict?.verdict === 'APPROVED'
-                  ? 'rgba(34, 197, 94, 0.15)'
-                  : 'rgba(239, 68, 68, 0.15)',
-                border: `1px solid ${owlVerdict?.verdict === 'APPROVED'
-                  ? 'rgba(34, 197, 94, 0.4)'
-                  : 'rgba(239, 68, 68, 0.4)'}`,
+                  ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(16, 185, 129, 0.25))'
+                  : 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.25))',
+                border: `2px solid ${owlVerdict?.verdict === 'APPROVED'
+                  ? 'rgba(34, 197, 94, 0.6)'
+                  : 'rgba(239, 68, 68, 0.6)'}`,
                 color: owlVerdict?.verdict === 'APPROVED' ? '#4ade80' : '#f87171',
+                boxShadow: owlVerdict?.verdict === 'APPROVED'
+                  ? '0 0 12px rgba(34, 197, 94, 0.4)'
+                  : '0 0 12px rgba(239, 68, 68, 0.4)',
               }}
             >
               {owlVerdict?.verdict === 'APPROVED'

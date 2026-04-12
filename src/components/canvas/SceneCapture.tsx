@@ -22,7 +22,7 @@
  *   }
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useCanvasStore } from '@/store/canvas-store';
@@ -66,106 +66,93 @@ const CAPTURE_VIEWS: ViewConfig[] = [
   },
 ];
 
+/**
+ * Compute the centroid (center of mass) of all nodes in the scene
+ * Reads nodes from store at call time, not at registration time
+ */
+function computeCentroid(): THREE.Vector3 {
+  const nodes = useCanvasStore.getState().nodes;
+  const nodeList = Object.values(nodes);
+
+  if (nodeList.length === 0) {
+    return new THREE.Vector3(0, 1.5, 0);
+  }
+
+  // Compute bounding box of all nodes
+  const bbox = new THREE.Box3();
+  for (const node of nodeList) {
+    const pos = new THREE.Vector3(node.position.x, node.position.y, node.position.z);
+    bbox.expandByPoint(pos);
+  }
+
+  // Return center of bounding box
+  const center = new THREE.Vector3();
+  bbox.getCenter(center);
+  return center;
+}
+
 export function SceneCapture() {
   const { gl, scene, camera } = useThree();
-  const nodes = useCanvasStore((s) => s.nodes);
-
-  /**
-   * Compute the centroid (center of mass) of all nodes in the scene
-   */
-  const computeCentroid = useCallback((): THREE.Vector3 => {
-    const nodeList = Object.values(nodes);
-
-    if (nodeList.length === 0) {
-      return new THREE.Vector3(0, 1.5, 0);
-    }
-
-    // Compute bounding box of all nodes
-    const bbox = new THREE.Box3();
-    for (const node of nodeList) {
-      const pos = new THREE.Vector3(node.position.x, node.position.y, node.position.z);
-      bbox.expandByPoint(pos);
-    }
-
-    // Return center of bounding box
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-    return center;
-  }, [nodes]);
-
-  /**
-   * Capture a single view of the scene
-   */
-  const captureView = useCallback(
-    (viewConfig: ViewConfig, centroid: THREE.Vector3): CapturedFrame => {
-      // Create a temporary camera for capture (don't disturb user's view)
-      const captureCamera = new THREE.PerspectiveCamera(
-        60, // fov
-        gl.domElement.width / gl.domElement.height, // aspect
-        0.1, // near
-        1000 // far
-      );
-
-      // Position camera according to view config
-      const position = viewConfig.getPosition(centroid);
-      captureCamera.position.copy(position);
-      captureCamera.lookAt(centroid);
-      captureCamera.updateProjectionMatrix();
-
-      // Render the scene from this camera's perspective
-      gl.render(scene, captureCamera);
-
-      // Capture the frame as base64 PNG
-      const dataUrl = gl.domElement.toDataURL('image/png');
-
-      return {
-        name: viewConfig.name,
-        image: dataUrl,
-      };
-    },
-    [gl, scene]
-  );
-
-  /**
-   * Capture all views of the scene
-   */
-  const captureAllFrames = useCallback(async (): Promise<CapturedFrame[]> => {
-    const startTime = performance.now();
-
-    // Compute assembly centroid
-    const centroid = computeCentroid();
-
-    // Store original render state
-    const originalClearColor = gl.getClearColor(new THREE.Color());
-    const originalClearAlpha = gl.getClearAlpha();
-
-    // Capture each view
-    const frames: CapturedFrame[] = [];
-    for (const viewConfig of CAPTURE_VIEWS) {
-      const frame = captureView(viewConfig, centroid);
-      frames.push(frame);
-    }
-
-    // Restore original render state and re-render from user's camera
-    gl.setClearColor(originalClearColor, originalClearAlpha);
-    gl.render(scene, camera);
-
-    const elapsed = (performance.now() - startTime).toFixed(1);
-    console.log(`[SCENE CAPTURE] Captured ${frames.length} views in ${elapsed}ms`);
-
-    return frames;
-  }, [gl, scene, camera, computeCentroid, captureView]);
 
   // Register the capture function when component mounts
+  // Only depends on gl, scene, camera — reads nodes at capture time
   useEffect(() => {
-    _captureFrames = captureAllFrames;
+    _captureFrames = async (): Promise<CapturedFrame[]> => {
+      const startTime = performance.now();
+
+      // Compute assembly centroid (reads current nodes from store)
+      const centroid = computeCentroid();
+
+      // Store original render state
+      const originalClearColor = gl.getClearColor(new THREE.Color());
+      const originalClearAlpha = gl.getClearAlpha();
+
+      // Capture each view
+      const frames: CapturedFrame[] = [];
+      for (const viewConfig of CAPTURE_VIEWS) {
+        // Create a temporary camera for capture (don't disturb user's view)
+        const captureCamera = new THREE.PerspectiveCamera(
+          60, // fov
+          gl.domElement.width / gl.domElement.height, // aspect
+          0.1, // near
+          1000 // far
+        );
+
+        // Position camera according to view config
+        const position = viewConfig.getPosition(centroid);
+        captureCamera.position.copy(position);
+        captureCamera.lookAt(centroid);
+        captureCamera.updateProjectionMatrix();
+
+        // Render the scene from this camera's perspective
+        gl.render(scene, captureCamera);
+
+        // Capture the frame as base64 PNG
+        const dataUrl = gl.domElement.toDataURL('image/png');
+
+        frames.push({
+          name: viewConfig.name,
+          image: dataUrl,
+        });
+      }
+
+      // Restore original render state and re-render from user's camera
+      gl.setClearColor(originalClearColor, originalClearAlpha);
+      gl.render(scene, camera);
+
+      const elapsed = (performance.now() - startTime).toFixed(1);
+      console.log(`[SCENE CAPTURE] Captured ${frames.length} views in ${elapsed}ms`);
+
+      return frames;
+    };
+
     console.log('[SCENE CAPTURE] Capture function registered');
 
     return () => {
       _captureFrames = null;
       console.log('[SCENE CAPTURE] Capture function unregistered');
     };
-  }, [captureAllFrames]);
+  }, [gl, scene, camera]);
 
   // This component renders nothing — it's purely a hook into the render context
   return null;

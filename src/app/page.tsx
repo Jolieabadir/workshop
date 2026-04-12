@@ -7,6 +7,7 @@ import { useHandStore } from '@/store/hand-store';
 import { useSafetyStore } from '@/store/safety-store';
 import { useInputStore } from '@/store/input-store';
 import { useOwlAnalysis } from '@/hooks/useOwlAnalysis';
+import { useVisualFeedbackLoop } from '@/hooks/useVisualFeedbackLoop';
 import { DeepgramClient } from '@/speech/deepgram-client';
 import { getTTSPlayer } from '@/speech/tts-player';
 import { processHandInput } from '@/input/input-manager';
@@ -65,6 +66,20 @@ export default function Home() {
 
   // Owl background analysis - fires automatically after canvas changes
   useOwlAnalysis();
+
+  // Visual feedback loop for assembly correction
+  const {
+    isRunning: isFixingAssembly,
+    currentIteration,
+    maxIterations,
+    lastEvaluation,
+    triggerVisualFeedbackLoop,
+  } = useVisualFeedbackLoop();
+
+  // Derive Owl verdict display
+  const owlVerdict = lastEvaluation?.assemblyVerdict;
+  const issueCount = owlVerdict?.issueCount ??
+    lastEvaluation?.partEvaluations?.filter((p) => p.issue !== 'none').length ?? 0;
 
   // TTS player ref
   const ttsPlayerRef = useRef<ReturnType<typeof getTTSPlayer> | null>(null);
@@ -707,7 +722,56 @@ export default function Home() {
           </form>
 
           {/* Debug buttons — replaced by voice + gestures later */}
-          <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              onClick={() => triggerVisualFeedbackLoop()}
+              disabled={isFixingAssembly}
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                padding: '10px 18px',
+                borderRadius: '10px',
+                border: `2px solid ${isFixingAssembly ? 'rgba(99, 102, 241, 0.8)' : 'rgba(99, 102, 241, 0.6)'}`,
+                background: isFixingAssembly
+                  ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(139, 92, 246, 0.4))'
+                  : 'linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.25))',
+                color: '#fff',
+                cursor: isFixingAssembly ? 'wait' : 'pointer',
+                boxShadow: isFixingAssembly
+                  ? '0 0 20px rgba(139, 92, 246, 0.6), inset 0 0 10px rgba(139, 92, 246, 0.3)'
+                  : '0 0 12px rgba(99, 102, 241, 0.4)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {isFixingAssembly
+                ? `🔧 Fixing... (${currentIteration}/${maxIterations})`
+                : '🦉 Fix Assembly'}
+            </button>
+            {/* Owl verdict display */}
+            {lastEvaluation && !isFixingAssembly && (
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  background: owlVerdict?.verdict === 'APPROVED'
+                    ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.25), rgba(16, 185, 129, 0.25))'
+                    : 'linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(220, 38, 38, 0.25))',
+                  border: `2px solid ${owlVerdict?.verdict === 'APPROVED'
+                    ? 'rgba(34, 197, 94, 0.6)'
+                    : 'rgba(239, 68, 68, 0.6)'}`,
+                  color: owlVerdict?.verdict === 'APPROVED' ? '#4ade80' : '#f87171',
+                  boxShadow: owlVerdict?.verdict === 'APPROVED'
+                    ? '0 0 12px rgba(34, 197, 94, 0.4)'
+                    : '0 0 12px rgba(239, 68, 68, 0.4)',
+                }}
+              >
+                {owlVerdict?.verdict === 'APPROVED'
+                  ? '🦉 APPROVED ✓'
+                  : `🦉 NOT APPROVED — ${issueCount} issue${issueCount !== 1 ? 's' : ''}`}
+              </span>
+            )}
             <button onClick={() => addNode('text_card', 'New idea', 'Untitled')} style={btnStyle}>
               + Add card
             </button>
