@@ -74,6 +74,23 @@ export interface GeometryAnalysis {
   timestamp: number;
 }
 
+/** Auto-connection result for snapping parts together */
+export interface AutoConnection {
+  fromId: string;
+  toId: string;
+  fromTitle: string;
+  toTitle: string;
+  snapPosition: Vec3;
+  gapVector: Vec3;
+  gapDistance: number;
+  facePair: {
+    fromFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back';
+    toFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back';
+  };
+  connectionType: 'vertical' | 'horizontal' | 'radial';
+  role: 'anchor' | 'top' | 'bottom' | 'side';
+}
+
 // ============================================================
 // Module-level Scene Reference
 // ============================================================
@@ -512,4 +529,405 @@ export function formatGeometryForPrompt(analysis: GeometryAnalysis): string {
   lines.push('');
 
   return lines.join('\n');
+}
+
+// ============================================================
+// Auto-Connection System
+// ============================================================
+
+/** Opposing face pairs for connection detection */
+const OPPOSING_FACES: Record<string, string> = {
+  top: 'bottom',
+  bottom: 'top',
+  left: 'right',
+  right: 'left',
+  front: 'back',
+  back: 'front',
+};
+
+/** Part role hints based on common naming patterns */
+const ROLE_PATTERNS = {
+  anchor: /fuselage|body|main|hull|chassis|frame|base|core/i,
+  top: /nose|cone|tip|cap|top|head|cockpit|canopy/i,
+  bottom: /engine|nozzle|thruster|exhaust|motor|booster|bell/i,
+  side: /fin|wing|rudder|stabilizer|aileron|flap|tail/i,
+};
+
+/**
+ * Infer the role of a part based on its name and geometry.
+ */
+function inferPartRole(
+  title: string,
+  volume: number,
+  maxVolume: number,
+  aspectRatio: { heightToWidth: number; heightToDepth: number }
+): 'anchor' | 'top' | 'bottom' | 'side' | 'unknown' {
+  const normalizedTitle = title.toLowerCase();
+
+  // Check name patterns first
+  if (ROLE_PATTERNS.anchor.test(normalizedTitle)) return 'anchor';
+  if (ROLE_PATTERNS.top.test(normalizedTitle)) return 'top';
+  if (ROLE_PATTERNS.bottom.test(normalizedTitle)) return 'bottom';
+  if (ROLE_PATTERNS.side.test(normalizedTitle)) return 'side';
+
+  // Infer from geometry
+  const volumeRatio = volume / maxVolume;
+
+  // Largest part is likely the anchor/fuselage
+  if (volumeRatio > 0.5) return 'anchor';
+
+  // Tall and thin = likely top or bottom attachment
+  if (aspectRatio.heightToWidth > 1.5 && volumeRatio < 0.3) {
+    return 'top'; // Could be nose cone or engine
+  }
+
+  // Flat/wide = likely side attachment (fins)
+  if (aspectRatio.heightToWidth < 0.5 && aspectRatio.heightToDepth < 0.5) {
+    return 'side';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Get the center point of a specific face of a bounding box.
+ */
+function getFaceCenter(
+  bbox: { min: Vec3; max: Vec3 },
+  face: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back'
+): Vec3 {
+  const center = {
+    x: (bbox.min.x + bbox.max.x) / 2,
+    y: (bbox.min.y + bbox.max.y) / 2,
+    z: (bbox.min.z + bbox.max.z) / 2,
+  };
+
+  switch (face) {
+    case 'top':
+      return { x: center.x, y: bbox.max.y, z: center.z };
+    case 'bottom':
+      return { x: center.x, y: bbox.min.y, z: center.z };
+    case 'left':
+      return { x: bbox.min.x, y: center.y, z: center.z };
+    case 'right':
+      return { x: bbox.max.x, y: center.y, z: center.z };
+    case 'front':
+      return { x: center.x, y: center.y, z: bbox.max.z };
+    case 'back':
+      return { x: center.x, y: center.y, z: bbox.min.z };
+  }
+}
+
+/**
+ * Compute the distance between two face centers.
+ */
+function facePairDistance(
+  bboxA: { min: Vec3; max: Vec3 },
+  faceA: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back',
+  bboxB: { min: Vec3; max: Vec3 },
+  faceB: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back'
+): { distance: number; gapVector: Vec3 } {
+  const centerA = getFaceCenter(bboxA, faceA);
+  const centerB = getFaceCenter(bboxB, faceB);
+
+  const dx = centerB.x - centerA.x;
+  const dy = centerB.y - centerA.y;
+  const dz = centerB.z - centerA.z;
+
+  return {
+    distance: Math.sqrt(dx * dx + dy * dy + dz * dz),
+    gapVector: { x: dx, y: dy, z: dz },
+  };
+}
+
+/**
+ * Find the best opposing face pair between two bounding boxes.
+ */
+function findBestFacePair(
+  bboxA: { min: Vec3; max: Vec3 },
+  bboxB: { min: Vec3; max: Vec3 }
+): {
+  fromFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back';
+  toFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back';
+  distance: number;
+  gapVector: Vec3;
+} {
+  const faces: Array<'top' | 'bottom' | 'left' | 'right' | 'front' | 'back'> = [
+    'top', 'bottom', 'left', 'right', 'front', 'back',
+  ];
+
+  let bestPair = {
+    fromFace: 'top' as const,
+    toFace: 'bottom' as const,
+    distance: Infinity,
+    gapVector: { x: 0, y: 0, z: 0 },
+  };
+
+  // Check all opposing face pairs
+  for (const faceA of faces) {
+    const opposingFace = OPPOSING_FACES[faceA] as typeof faceA;
+    const { distance, gapVector } = facePairDistance(bboxA, faceA, bboxB, opposingFace);
+
+    if (distance < bestPair.distance) {
+      bestPair = {
+        fromFace: faceA,
+        toFace: opposingFace,
+        distance,
+        gapVector,
+      };
+    }
+  }
+
+  return bestPair;
+}
+
+/**
+ * Compute the snap position to move partB so its face touches partA's face.
+ */
+function computeSnapPosition(
+  bboxA: { min: Vec3; max: Vec3 },
+  bboxB: { min: Vec3; max: Vec3 },
+  fromFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back',
+  toFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back',
+  currentCenterB: Vec3
+): Vec3 {
+  const targetFaceCenter = getFaceCenter(bboxA, fromFace);
+  const currentToFaceCenter = getFaceCenter(bboxB, toFace);
+
+  // Calculate the offset needed to align the faces
+  const offset = {
+    x: targetFaceCenter.x - currentToFaceCenter.x,
+    y: targetFaceCenter.y - currentToFaceCenter.y,
+    z: targetFaceCenter.z - currentToFaceCenter.z,
+  };
+
+  // Apply offset to current center
+  return {
+    x: currentCenterB.x + offset.x,
+    y: currentCenterB.y + offset.y,
+    z: currentCenterB.z + offset.z,
+  };
+}
+
+/**
+ * Compute auto-connections between all loaded mesh nodes based on bounding box proximity.
+ *
+ * For vertical assemblies (rockets, towers, etc.):
+ * - Finds the largest part as the anchor (fuselage)
+ * - Stacks parts above/below based on their names/types
+ * - Nose cone goes on top, engine on bottom, fins on sides
+ */
+export function computeAutoConnections(
+  nodes: Record<string, CanvasNode>,
+  existingConnections: Record<string, CanvasConnection>,
+  proximityThreshold: number = 2.0
+): AutoConnection[] {
+  const scene = _threeScene;
+  if (!scene) {
+    console.warn('[AUTO-CONNECT] Scene not registered');
+    return [];
+  }
+
+  const nodeList = Object.values(nodes);
+  if (nodeList.length < 2) {
+    return []; // Need at least 2 parts to connect
+  }
+
+  // Gather bounding box data for all nodes with loaded meshes
+  interface PartData {
+    nodeId: string;
+    title: string;
+    bbox: { min: Vec3; max: Vec3 };
+    center: Vec3;
+    size: Vec3;
+    volume: number;
+    meshFound: boolean;
+  }
+
+  const parts: PartData[] = [];
+
+  for (const node of nodeList) {
+    // Skip if already has connections
+    const hasConnection = Object.values(existingConnections).some(
+      (c) => c.fromId === node.id || c.toId === node.id
+    );
+
+    const mesh = findMeshForNode(scene, node.id);
+
+    if (mesh) {
+      const bboxMetrics = computeBoundingBoxMetrics(mesh);
+      const volume = bboxMetrics.size.x * bboxMetrics.size.y * bboxMetrics.size.z;
+
+      parts.push({
+        nodeId: node.id,
+        title: node.title || node.content.slice(0, 30),
+        bbox: { min: bboxMetrics.min, max: bboxMetrics.max },
+        center: bboxMetrics.center,
+        size: bboxMetrics.size,
+        volume,
+        meshFound: true,
+      });
+    } else if (node.meshLoading) {
+      // Mesh is still loading, skip for now
+      console.log(`[AUTO-CONNECT] Skipping ${node.title || node.id} — mesh still loading`);
+    }
+  }
+
+  if (parts.length < 2) {
+    console.log('[AUTO-CONNECT] Not enough loaded meshes to connect');
+    return [];
+  }
+
+  // Find the largest part (anchor/fuselage)
+  const maxVolume = Math.max(...parts.map((p) => p.volume));
+  const anchorPart = parts.find((p) => p.volume === maxVolume);
+
+  if (!anchorPart) {
+    return [];
+  }
+
+  // Classify parts by role
+  const partRoles = new Map<string, 'anchor' | 'top' | 'bottom' | 'side' | 'unknown'>();
+
+  for (const part of parts) {
+    const aspectRatio = {
+      heightToWidth: part.size.y / Math.max(part.size.x, 0.01),
+      heightToDepth: part.size.y / Math.max(part.size.z, 0.01),
+    };
+    const role = inferPartRole(part.title, part.volume, maxVolume, aspectRatio);
+    partRoles.set(part.nodeId, role);
+  }
+
+  // Build connections
+  const connections: AutoConnection[] = [];
+  const connectedParts = new Set<string>();
+
+  // First, connect non-anchor parts to the anchor
+  for (const part of parts) {
+    if (part.nodeId === anchorPart.nodeId) continue;
+
+    const role = partRoles.get(part.nodeId) || 'unknown';
+    const facePair = findBestFacePair(anchorPart.bbox, part.bbox);
+
+    if (facePair.distance <= proximityThreshold) {
+      const snapPosition = computeSnapPosition(
+        anchorPart.bbox,
+        part.bbox,
+        facePair.fromFace,
+        facePair.toFace,
+        part.center
+      );
+
+      // Determine connection type
+      let connectionType: 'vertical' | 'horizontal' | 'radial' = 'horizontal';
+      if (facePair.fromFace === 'top' || facePair.fromFace === 'bottom') {
+        connectionType = 'vertical';
+      } else if (role === 'side') {
+        connectionType = 'radial';
+      }
+
+      connections.push({
+        fromId: anchorPart.nodeId,
+        toId: part.nodeId,
+        fromTitle: anchorPart.title,
+        toTitle: part.title,
+        snapPosition,
+        gapVector: facePair.gapVector,
+        gapDistance: facePair.distance,
+        facePair: {
+          fromFace: facePair.fromFace,
+          toFace: facePair.toFace,
+        },
+        connectionType,
+        role,
+      });
+
+      connectedParts.add(part.nodeId);
+    }
+  }
+
+  // For parts not connected to anchor, check proximity to any other part
+  for (const partA of parts) {
+    if (connectedParts.has(partA.nodeId) || partA.nodeId === anchorPart.nodeId) continue;
+
+    for (const partB of parts) {
+      if (partA.nodeId === partB.nodeId) continue;
+      if (!connectedParts.has(partB.nodeId) && partB.nodeId !== anchorPart.nodeId) continue;
+
+      const facePair = findBestFacePair(partB.bbox, partA.bbox);
+
+      if (facePair.distance <= proximityThreshold) {
+        const snapPosition = computeSnapPosition(
+          partB.bbox,
+          partA.bbox,
+          facePair.fromFace,
+          facePair.toFace,
+          partA.center
+        );
+
+        const role = partRoles.get(partA.nodeId) || 'unknown';
+        let connectionType: 'vertical' | 'horizontal' | 'radial' = 'horizontal';
+        if (facePair.fromFace === 'top' || facePair.fromFace === 'bottom') {
+          connectionType = 'vertical';
+        }
+
+        connections.push({
+          fromId: partB.nodeId,
+          toId: partA.nodeId,
+          fromTitle: partB.title,
+          toTitle: partA.title,
+          snapPosition,
+          gapVector: facePair.gapVector,
+          gapDistance: facePair.distance,
+          facePair: {
+            fromFace: facePair.fromFace,
+            toFace: facePair.toFace,
+          },
+          connectionType,
+          role,
+        });
+
+        connectedParts.add(partA.nodeId);
+        break; // Found a connection for this part
+      }
+    }
+  }
+
+  // Sort connections: anchor connections first, then by role priority
+  const rolePriority: Record<string, number> = {
+    anchor: 0,
+    bottom: 1,
+    top: 2,
+    side: 3,
+    unknown: 4,
+  };
+
+  connections.sort((a, b) => {
+    const priorityA = rolePriority[a.role] ?? 4;
+    const priorityB = rolePriority[b.role] ?? 4;
+    return priorityA - priorityB;
+  });
+
+  return connections;
+}
+
+/**
+ * Check if all mesh nodes have finished loading.
+ */
+export function allMeshesLoaded(nodes: Record<string, CanvasNode>): boolean {
+  const meshNodes = Object.values(nodes).filter((n) => n.meshUrl || n.meshLoading);
+
+  if (meshNodes.length === 0) return true;
+
+  return meshNodes.every((node) => {
+    if (node.meshLoading) return false;
+    if (!node.meshUrl) return true;
+
+    // Check if mesh is actually in the scene
+    const scene = _threeScene;
+    if (!scene) return false;
+
+    const mesh = findMeshForNode(scene, node.id);
+    return mesh !== null;
+  });
 }

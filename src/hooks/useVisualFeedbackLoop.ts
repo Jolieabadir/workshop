@@ -4,7 +4,14 @@ import { useState, useCallback, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
 import { parseToolCallToAction } from '@/agents/builder/action-parser';
 import { getCaptureFrames } from '@/components/canvas/SceneCapture';
-import { analyzeGeometry, formatGeometryForPrompt, type GeometryAnalysis } from '@/utils/geometryAnalyzer';
+import {
+  analyzeGeometry,
+  formatGeometryForPrompt,
+  computeAutoConnections,
+  allMeshesLoaded,
+  type GeometryAnalysis,
+  type AutoConnection,
+} from '@/utils/geometryAnalyzer';
 import type { BuilderAction, CanvasState } from '@/core/types';
 
 const MAX_ITERATIONS = 5;
@@ -93,6 +100,8 @@ export function useVisualFeedbackLoop() {
   const setMechanicActive = useCanvasStore((s) => s.setMechanicActive);
   const setMechanicTarget = useCanvasStore((s) => s.setMechanicTarget);
   const addCorrectionHighlight = useCanvasStore((s) => s.addCorrectionHighlight);
+  const addConnection = useCanvasStore((s) => s.addConnection);
+  const updateNode = useCanvasStore((s) => s.updateNode);
 
   /**
    * Capture frames from the 3D scene.
@@ -154,6 +163,60 @@ export function useVisualFeedbackLoop() {
 
     return analysis;
   }, []);
+
+  /**
+   * Run auto-connection: detect parts that should be connected and snap them together.
+   * This runs BEFORE Owl evaluation to automatically assemble parts based on proximity.
+   */
+  const runAutoConnect = useCallback(async (): Promise<number> => {
+    const { nodes, connections } = useCanvasStore.getState();
+
+    // Check if all meshes are loaded
+    if (!allMeshesLoaded(nodes)) {
+      console.log('[AUTO-CONNECT] Waiting for meshes to load...');
+      return 0;
+    }
+
+    // Compute auto-connections based on bounding box proximity
+    const autoConnections = computeAutoConnections(nodes, connections, 2.0);
+
+    if (autoConnections.length === 0) {
+      console.log('[AUTO-CONNECT] No new connections needed');
+      return 0;
+    }
+
+    console.log(`[AUTO-CONNECT] Found ${autoConnections.length} connections to create`);
+
+    // Apply each connection
+    for (const conn of autoConnections) {
+      // Create the connection (fromId, toId, label)
+      addConnection(conn.fromId, conn.toId, `auto-${conn.connectionType}`);
+
+      // Snap the "to" part to the correct position
+      updateNode(conn.toId, {
+        position: conn.snapPosition,
+      });
+
+      // Add visual highlight
+      addCorrectionHighlight(conn.toId, 'move');
+
+      // Move mechanic avatar to show work
+      const node = nodes[conn.toId];
+      if (node) {
+        setMechanicTarget(conn.snapPosition);
+      }
+
+      console.log(
+        `[AUTO-CONNECT] Snapped ${conn.toTitle} to ${conn.fromTitle} ` +
+        `(gap: ${conn.gapDistance.toFixed(2)} units, face: ${conn.facePair.fromFace}→${conn.facePair.toFace})`
+      );
+
+      // Small delay for visual effect
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    return autoConnections.length;
+  }, [addConnection, updateNode, addCorrectionHighlight, setMechanicTarget]);
 
   /**
    * Call Owl agent to evaluate the assembly visually.
@@ -298,10 +361,14 @@ export function useVisualFeedbackLoop() {
   const applyCorrections = useCallback(async (corrections: BuilderAction[]) => {
     const nodes = useCanvasStore.getState().nodes;
 
-    for (const action of corrections) {
-      // Skip respond_verbally actions - Mechanic shouldn't speak
-      if (action.type === 'respond_verbally') continue;
+    // Filter to only spatial correction types
+    const spatialTypes = new Set(['move_node', 'update_node', 'rotate_node', 'scale_node', 'generate_mesh']);
+    const spatialCorrections = corrections.filter((a) => spatialTypes.has(a.type));
+    const respondVerballyCount = corrections.filter((a) => a.type === 'respond_verbally').length;
 
+    console.log(`[FEEDBACK LOOP] Mechanic applied ${spatialCorrections.length} spatial corrections (filtered ${respondVerballyCount} respond_verbally)`);
+
+    for (const action of spatialCorrections) {
       // Get the nodeId being corrected
       const nodeId = getNodeIdFromAction(action);
       const node = nodeId ? nodes[nodeId] : null;
@@ -380,6 +447,14 @@ export function useVisualFeedbackLoop() {
     let lastEval: OwlEvaluation | null = null;
 
     try {
+      // Step 0: Run auto-connection to snap parts together BEFORE evaluation
+      console.log('[FEEDBACK LOOP] Running auto-connection pass...');
+      const autoConnectCount = await runAutoConnect();
+      if (autoConnectCount > 0) {
+        console.log(`[FEEDBACK LOOP] Auto-connected ${autoConnectCount} parts, waiting for render...`);
+        await waitForRender();
+      }
+
       while (iteration < MAX_ITERATIONS) {
         iteration++;
         console.log(`[FEEDBACK LOOP] Iteration ${iteration}/${MAX_ITERATIONS} — capturing frames...`);
@@ -481,6 +556,7 @@ export function useVisualFeedbackLoop() {
     captureFrames,
     analyzeCVMetrics,
     runGeometryAnalysis,
+    runAutoConnect,
     getCanvasState,
     getOwlEvaluation,
     isApproved,
