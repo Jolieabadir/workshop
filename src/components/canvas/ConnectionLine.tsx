@@ -13,20 +13,35 @@ const COMPONENT_SCALE = 10;
  * Get the world position for a connection endpoint.
  * If the node has a component with connectorPoints and a matching port is specified,
  * returns the connector's world position (node position + scaled connector offset).
+ * For mesh nodes with virtualPorts, uses world-scale units directly.
  * Otherwise returns the node center.
  */
 function getEndpointPosition(node: CanvasNode, portId?: string): Vec3 {
-  // Check if node has component connector points and a port is specified
-  if (portId && node.component?.connectorPoints) {
-    const connector = node.component.connectorPoints.find(cp => cp.id === portId);
-    if (connector) {
-      // Connector position is relative to node origin in local coords
-      // Must multiply by COMPONENT_SCALE to match the visual rendering
-      return {
-        x: node.position.x + connector.position.x * COMPONENT_SCALE,
-        y: node.position.y + connector.position.y * COMPONENT_SCALE,
-        z: node.position.z + connector.position.z * COMPONENT_SCALE,
-      };
+  if (portId) {
+    // Check parametric component ports first
+    if (node.component?.connectorPoints) {
+      const connector = node.component.connectorPoints.find(cp => cp.id === portId);
+      if (connector) {
+        // Connector position is relative to node origin in local coords
+        // Must multiply by COMPONENT_SCALE to match the visual rendering
+        return {
+          x: node.position.x + connector.position.x * COMPONENT_SCALE,
+          y: node.position.y + connector.position.y * COMPONENT_SCALE,
+          z: node.position.z + connector.position.z * COMPONENT_SCALE,
+        };
+      }
+    }
+    // Fall back to virtual ports (mesh nodes)
+    if (node.virtualPorts) {
+      const vport = node.virtualPorts.find(vp => vp.id === portId);
+      if (vport) {
+        // Virtual ports are already in world-scale units (not mm like components)
+        return {
+          x: node.position.x + vport.position.x,
+          y: node.position.y + vport.position.y,
+          z: node.position.z + vport.position.z,
+        };
+      }
     }
   }
   // Fall back to node center

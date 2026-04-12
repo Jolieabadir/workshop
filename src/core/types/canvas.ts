@@ -82,6 +82,8 @@ export interface CanvasNode {
   meshPreviewUrl?: string;
   /** Error message if mesh generation failed */
   meshError?: string;
+  /** Virtual connector points for mesh nodes (semantic estimates from Builder) */
+  virtualPorts?: ComponentConnectorPoint[];
 }
 
 export interface Badge {

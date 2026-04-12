@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape, Badge, ComponentType, ComponentData } from '@/core/types';
+import type { CanvasState, CanvasNode, CanvasConnection, CanvasGroup, BuilderAction, Vec3, NodeType, NodeShape, Badge, ComponentType, ComponentData, ComponentConnectorPoint } from '@/core/types';
 import { getConnectorPointsForComponent } from '@/components/canvas/generators';
 
 function uid(): string {
@@ -123,7 +123,7 @@ interface CanvasStore extends CanvasState {
   // Direct mutations
   addNode: (type: NodeType, content: string, title?: string, position?: Vec3, shape?: NodeShape, context?: PlacementContext) => string;
   addComponent: (componentType: ComponentType, params: Record<string, unknown>, title: string, position?: Vec3, rotation?: Vec3) => string;
-  generateMesh: (prompt: string, title: string, position?: Vec3, style?: 'realistic' | 'cartoon') => string;
+  generateMesh: (prompt: string, title: string, position?: Vec3, style?: 'realistic' | 'cartoon', virtualPorts?: ComponentConnectorPoint[]) => string;
   removeNode: (id: string) => void;
   updateNode: (id: string, changes: Partial<CanvasNode>) => void;
   moveNode: (id: string, position: Vec3) => void;
@@ -240,7 +240,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return id;
   },
 
-  generateMesh: (prompt, title, position, style = 'realistic') => {
+  generateMesh: (prompt, title, position, style = 'realistic', virtualPorts) => {
     const id = uid();
     const now = Date.now();
     const state = get();
@@ -261,6 +261,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           updatedAt: now,
           meshLoading: true,
           color: '#888888',
+          virtualPorts, // Store virtual ports for mesh connections
         },
       },
       focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
@@ -309,6 +310,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
               meshLoading: false,
               content: prompt,
               updatedAt: Date.now(),
+              virtualPorts, // Preserve virtual ports after mesh loads
             } : s.nodes[id],
           },
         }));
@@ -637,7 +639,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           action.prompt,
           action.title,
           action.position,
-          action.style
+          action.style,
+          (action as { virtualPorts?: ComponentConnectorPoint[] }).virtualPorts
         );
         break;
       case 'create_connection':
