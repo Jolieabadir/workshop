@@ -1,0 +1,378 @@
+'use client';
+
+import { useState, useCallback, useRef } from 'react';
+import { useCanvasStore } from '@/store/canvas-store';
+import { parseToolCallToAction } from '@/agents/builder/action-parser';
+import type { BuilderAction, CanvasState } from '@/core/types';
+
+// Import the capture function from SceneCapture (will be available when SceneCapture is created)
+// For now, we declare the expected signature
+declare function getCaptureFrames(): Promise<string[]>;
+
+const MAX_ITERATIONS = 5;
+const RENDER_SETTLE_MS = 500;
+
+/** Part evaluation from Owl */
+interface PartEvaluation {
+  nodeId: string;
+  partName: string;
+  issue: string;
+  severity: string;
+  details: string;
+  suggestedFix?: string;
+}
+
+/** Assembly verdict from Owl */
+interface AssemblyVerdict {
+  verdict: 'APPROVED' | 'NOT_APPROVED';
+  coherenceScore?: number;
+  summary: string;
+  issueCount: number;
+}
+
+/** Full Owl evaluation response */
+interface OwlEvaluation {
+  badges: Array<{ nodeId: string; badgeType: string; message: string }>;
+  suggestedConnections: Array<{ fromId: string; toId: string; reason: string }>;
+  partEvaluations: PartEvaluation[];
+  assemblyVerdict: AssemblyVerdict | null;
+}
+
+/** CV metrics from OpenCV analysis */
+interface CVMetrics {
+  parts?: Array<{
+    nodeId: string;
+    boundingBox: { x: number; y: number; width: number; height: number };
+    areaRatio?: number;
+    orientationDeg?: number;
+  }>;
+  gaps?: Array<{
+    fromId: string;
+    toId: string;
+    gapPixels: number;
+  }>;
+  overallCoherence?: number;
+}
+
+/** State exposed by the hook */
+interface FeedbackLoopState {
+  isRunning: boolean;
+  currentIteration: number;
+  maxIterations: number;
+  lastEvaluation: OwlEvaluation | null;
+  error: string | null;
+}
+
+/**
+ * Hook that orchestrates the Owl ↔ Mechanic visual feedback correction loop.
+ *
+ * The loop captures 3D scene frames, analyzes them with OpenCV and Owl,
+ * then applies Mechanic corrections until the assembly is approved or max iterations reached.
+ */
+export function useVisualFeedbackLoop() {
+  const [state, setState] = useState<FeedbackLoopState>({
+    isRunning: false,
+    currentIteration: 0,
+    maxIterations: MAX_ITERATIONS,
+    lastEvaluation: null,
+    error: null,
+  });
+
+  const isRunningRef = useRef(false);
+
+  // Get canvas store functions
+  const getCanvasState = useCallback((): CanvasState => {
+    const store = useCanvasStore.getState();
+    return {
+      nodes: store.nodes,
+      connections: store.connections,
+      groups: store.groups,
+      focusStack: store.focusStack,
+    };
+  }, []);
+
+  const executeAction = useCanvasStore((s) => s.executeAction);
+
+  /**
+   * Capture frames from the 3D scene.
+   * Uses the getCaptureFrames function exported from SceneCapture.
+   */
+  const captureFrames = useCallback(async (): Promise<string[]> => {
+    try {
+      // Try to get the capture function from the global scope
+      // SceneCapture.tsx will expose this when mounted
+      const captureFunc = (window as unknown as { getCaptureFrames?: () => Promise<string[]> }).getCaptureFrames;
+      if (captureFunc) {
+        return await captureFunc();
+      }
+      console.warn('[FEEDBACK LOOP] getCaptureFrames not available, returning empty frames');
+      return [];
+    } catch (error) {
+      console.error('[FEEDBACK LOOP] Error capturing frames:', error);
+      return [];
+    }
+  }, []);
+
+  /**
+   * Call OpenCV analysis API to get structured metrics.
+   */
+  const analyzeCVMetrics = useCallback(async (frames: string[]): Promise<CVMetrics | null> => {
+    if (frames.length === 0) return null;
+
+    try {
+      const response = await fetch('/api/cv-analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frames }),
+      });
+
+      if (!response.ok) {
+        console.warn('[FEEDBACK LOOP] CV analysis failed:', response.status);
+        return null;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.warn('[FEEDBACK LOOP] CV analysis error:', error);
+      return null;
+    }
+  }, []);
+
+  /**
+   * Call Owl agent to evaluate the assembly visually.
+   */
+  const getOwlEvaluation = useCallback(async (
+    frames: string[],
+    cvMetrics: CVMetrics | null,
+    canvasState: CanvasState
+  ): Promise<OwlEvaluation | null> => {
+    try {
+      const response = await fetch('/api/agents/owl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          canvasState,
+          frames,
+          cvMetrics,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('[FEEDBACK LOOP] Owl evaluation failed:', response.status);
+        return null;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[FEEDBACK LOOP] Owl evaluation error:', error);
+      return null;
+    }
+  }, []);
+
+  /**
+   * Check if the Owl evaluation approves the assembly.
+   */
+  const isApproved = useCallback((evaluation: OwlEvaluation): boolean => {
+    // Check assembly verdict
+    if (evaluation.assemblyVerdict) {
+      return evaluation.assemblyVerdict.verdict === 'APPROVED';
+    }
+    // Fallback: no critical issues
+    const criticalIssues = evaluation.partEvaluations.filter(
+      (p) => p.severity === 'critical'
+    );
+    return criticalIssues.length === 0;
+  }, []);
+
+  /**
+   * Call Mechanic agent to get corrections based on Owl evaluation.
+   */
+  const getMechanicCorrections = useCallback(async (
+    owlEvaluation: OwlEvaluation,
+    frames: string[],
+    cvMetrics: CVMetrics | null,
+    canvasState: CanvasState
+  ): Promise<BuilderAction[]> => {
+    try {
+      const response = await fetch('/api/agents/mechanic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owlEvaluation,
+          frames,
+          cvMetrics,
+          canvasState,
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('[FEEDBACK LOOP] Mechanic corrections failed:', response.status);
+        return [];
+      }
+
+      const result = await response.json();
+
+      // Parse Mechanic tool calls into BuilderActions
+      // The Mechanic uses similar tools to the Builder: rotate_node, scale_node, move_node, etc.
+      const actions: BuilderAction[] = [];
+      if (result.toolCalls && Array.isArray(result.toolCalls)) {
+        for (const call of result.toolCalls) {
+          const action = parseToolCallToAction(call.name, call.input);
+          if (action) {
+            actions.push(action);
+          }
+        }
+      }
+
+      // Also check for actions array in response
+      if (result.actions && Array.isArray(result.actions)) {
+        actions.push(...result.actions);
+      }
+
+      return actions;
+    } catch (error) {
+      console.error('[FEEDBACK LOOP] Mechanic corrections error:', error);
+      return [];
+    }
+  }, []);
+
+  /**
+   * Apply Mechanic corrections to the canvas store.
+   */
+  const applyCorrections = useCallback((corrections: BuilderAction[]) => {
+    for (const action of corrections) {
+      // Skip respond_verbally actions - Mechanic shouldn't speak
+      if (action.type === 'respond_verbally') continue;
+      executeAction(action);
+    }
+  }, [executeAction]);
+
+  /**
+   * Wait for React to re-render after applying corrections.
+   */
+  const waitForRender = useCallback((): Promise<void> => {
+    return new Promise((resolve) => setTimeout(resolve, RENDER_SETTLE_MS));
+  }, []);
+
+  /**
+   * Run the full visual feedback correction loop.
+   * Call this after the Builder finishes an assembly.
+   */
+  const triggerVisualFeedbackLoop = useCallback(async (): Promise<{
+    success: boolean;
+    iterations: number;
+    finalEvaluation: OwlEvaluation | null;
+  }> => {
+    // Prevent concurrent runs
+    if (isRunningRef.current) {
+      console.log('[FEEDBACK LOOP] Already running, skipping');
+      return { success: false, iterations: 0, finalEvaluation: null };
+    }
+
+    isRunningRef.current = true;
+    setState((s) => ({
+      ...s,
+      isRunning: true,
+      currentIteration: 0,
+      error: null,
+    }));
+
+    let iteration = 0;
+    let lastEval: OwlEvaluation | null = null;
+
+    try {
+      while (iteration < MAX_ITERATIONS) {
+        iteration++;
+        console.log(`[FEEDBACK LOOP] Iteration ${iteration}/${MAX_ITERATIONS} — capturing frames...`);
+
+        setState((s) => ({ ...s, currentIteration: iteration }));
+
+        // Step 1: Capture frames from 3D scene
+        const frames = await captureFrames();
+        console.log(`[FEEDBACK LOOP] Captured ${frames.length} frames`);
+
+        // Step 2: Get OpenCV metrics (optional - may not be available)
+        const cvMetrics = await analyzeCVMetrics(frames);
+        if (cvMetrics) {
+          console.log('[FEEDBACK LOOP] CV metrics received');
+        }
+
+        // Step 3: Get Owl evaluation
+        const canvasState = getCanvasState();
+        const owlEvaluation = await getOwlEvaluation(frames, cvMetrics, canvasState);
+
+        if (!owlEvaluation) {
+          console.error('[FEEDBACK LOOP] Owl evaluation failed, stopping');
+          setState((s) => ({ ...s, error: 'Owl evaluation failed' }));
+          break;
+        }
+
+        lastEval = owlEvaluation;
+        setState((s) => ({ ...s, lastEvaluation: owlEvaluation }));
+
+        // Step 4: Check if approved
+        const approved = isApproved(owlEvaluation);
+        const issueCount = owlEvaluation.assemblyVerdict?.issueCount ??
+          owlEvaluation.partEvaluations.filter((p) => p.issue !== 'none').length;
+
+        if (approved) {
+          console.log(`[FEEDBACK LOOP] Owl: APPROVED — assembly looks correct after ${iteration} iteration(s)`);
+          break;
+        }
+
+        console.log(`[FEEDBACK LOOP] Owl: NOT_APPROVED (${issueCount} issues)`);
+
+        // Step 5: Get Mechanic corrections
+        const corrections = await getMechanicCorrections(
+          owlEvaluation,
+          frames,
+          cvMetrics,
+          canvasState
+        );
+
+        if (corrections.length === 0) {
+          console.log('[FEEDBACK LOOP] Mechanic returned no corrections, stopping');
+          break;
+        }
+
+        console.log(`[FEEDBACK LOOP] Mechanic applied ${corrections.length} corrections`);
+
+        // Step 6: Apply corrections
+        applyCorrections(corrections);
+
+        // Step 7: Wait for re-render
+        await waitForRender();
+      }
+
+      // Check final status
+      if (iteration >= MAX_ITERATIONS && lastEval && !isApproved(lastEval)) {
+        console.warn(`[FEEDBACK LOOP] Max iterations (${MAX_ITERATIONS}) reached without approval`);
+        setState((s) => ({ ...s, error: `Max iterations reached (${MAX_ITERATIONS})` }));
+      }
+
+      return {
+        success: lastEval ? isApproved(lastEval) : false,
+        iterations: iteration,
+        finalEvaluation: lastEval,
+      };
+
+    } finally {
+      isRunningRef.current = false;
+      setState((s) => ({ ...s, isRunning: false }));
+    }
+  }, [
+    captureFrames,
+    analyzeCVMetrics,
+    getCanvasState,
+    getOwlEvaluation,
+    isApproved,
+    getMechanicCorrections,
+    applyCorrections,
+    waitForRender,
+  ]);
+
+  return {
+    ...state,
+    triggerVisualFeedbackLoop,
+  };
+}

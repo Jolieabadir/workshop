@@ -9,9 +9,29 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+/** OpenCV analysis metrics for visual evaluation */
+interface CVMetrics {
+  parts?: Array<{
+    nodeId: string;
+    boundingBox: { x: number; y: number; width: number; height: number };
+    areaRatio?: number;
+    orientationDeg?: number;
+  }>;
+  gaps?: Array<{
+    fromId: string;
+    toId: string;
+    gapPixels: number;
+  }>;
+  overallCoherence?: number;
+}
+
 interface OwlRequest {
   canvasState: CanvasState;
   recentTranscripts?: string[];
+  /** Optional: base64 PNG images from multiple camera angles */
+  frames?: string[];
+  /** Optional: OpenCV analysis results */
+  cvMetrics?: CVMetrics;
 }
 
 function formatCanvasStateForOwl(state: CanvasState): string {
@@ -100,7 +120,7 @@ function parseOwlToolCalls(content: Anthropic.ContentBlock[]): OwlAnalysisResult
 export async function POST(request: NextRequest) {
   try {
     const body: OwlRequest = await request.json();
-    const { canvasState, recentTranscripts } = body;
+    const { canvasState, recentTranscripts, frames, cvMetrics } = body;
 
     // Skip analysis if canvas is empty
     const nodeCount = Object.keys(canvasState.nodes).length;
@@ -110,32 +130,121 @@ export async function POST(request: NextRequest) {
 
     const canvasContext = formatCanvasStateForOwl(canvasState);
 
-    let userMessage = canvasContext;
+    // Build text content
+    let textContent = canvasContext;
     if (recentTranscripts && recentTranscripts.length > 0) {
-      userMessage += '\n\n---\n\n## Recent Conversation:\n';
-      userMessage += recentTranscripts.map((t) => `- "${t}"`).join('\n');
+      textContent += '\n\n---\n\n## Recent Conversation:\n';
+      textContent += recentTranscripts.map((t) => `- "${t}"`).join('\n');
     }
 
-    userMessage += '\n\n---\n\nAnalyze this canvas for contradictions, missing connections, and completeness gaps. Be concise and only flag clear issues.';
+    // Add CV metrics if provided
+    if (cvMetrics) {
+      textContent += '\n\n---\n\n## OpenCV Analysis:\n';
+      textContent += JSON.stringify(cvMetrics, null, 2);
+    }
+
+    // Different prompts for visual vs text-only mode
+    if (frames && frames.length > 0) {
+      textContent += '\n\n---\n\nYou have been provided rendered images of the 3D scene. Evaluate each part\'s orientation, scale, position, and style coherence. Use evaluate_part for each part, then evaluate_assembly with your final verdict.';
+    } else {
+      textContent += '\n\n---\n\nAnalyze this canvas for contradictions, missing connections, and completeness gaps. Be concise and only flag clear issues.';
+    }
+
+    // Build user message content - images first, then text
+    const userContent: Array<
+      | { type: 'image'; source: { type: 'base64'; media_type: 'image/png'; data: string } }
+      | { type: 'text'; text: string }
+    > = [];
+
+    // Add image blocks if frames are provided
+    if (frames && frames.length > 0) {
+      for (const frame of frames) {
+        // Strip data URL prefix if present
+        const base64Data = frame.replace(/^data:image\/png;base64,/, '');
+        userContent.push({
+          type: 'image' as const,
+          source: {
+            type: 'base64' as const,
+            media_type: 'image/png' as const,
+            data: base64Data,
+          },
+        });
+      }
+    }
+
+    // Add text content
+    userContent.push({
+      type: 'text' as const,
+      text: textContent,
+    });
 
     // Wrap API call in try-catch to gracefully handle failures
     try {
+      // Use Sonnet for visual evaluation (better at image analysis), Haiku for text-only
+      const model = frames && frames.length > 0
+        ? 'claude-sonnet-4-20250514'
+        : 'claude-haiku-4-5-20251001';
+
       const response = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 512,
+        model,
+        max_tokens: frames && frames.length > 0 ? 1024 : 512,
         system: OWL_SYSTEM_PROMPT,
         tools: OWL_TOOLS,
         tool_choice: { type: 'auto' },
         messages: [
           {
             role: 'user',
-            content: userMessage,
+            content: userContent,
           },
         ],
       });
 
       const result = parseOwlToolCalls(response.content);
-      return NextResponse.json(result);
+
+      // For visual evaluation, also extract part evaluations and assembly verdict
+      const partEvaluations: Array<{
+        nodeId: string;
+        partName: string;
+        issue: string;
+        severity: string;
+        details: string;
+        suggestedFix?: string;
+      }> = [];
+      let assemblyVerdict: {
+        verdict: 'APPROVED' | 'NOT_APPROVED';
+        coherenceScore?: number;
+        summary: string;
+        issueCount: number;
+      } | null = null;
+
+      for (const block of response.content) {
+        if (block.type === 'tool_use') {
+          const input = block.input as Record<string, unknown>;
+          if (block.name === 'evaluate_part') {
+            partEvaluations.push({
+              nodeId: input.nodeId as string,
+              partName: input.partName as string,
+              issue: input.issue as string,
+              severity: input.severity as string,
+              details: input.details as string,
+              suggestedFix: input.suggestedFix as string | undefined,
+            });
+          } else if (block.name === 'evaluate_assembly') {
+            assemblyVerdict = {
+              verdict: input.verdict as 'APPROVED' | 'NOT_APPROVED',
+              coherenceScore: input.coherenceScore as number | undefined,
+              summary: input.summary as string,
+              issueCount: input.issueCount as number,
+            };
+          }
+        }
+      }
+
+      return NextResponse.json({
+        ...result,
+        partEvaluations,
+        assemblyVerdict,
+      });
     } catch (apiError) {
       console.error('Owl API call failed:', apiError);
       // Return empty result instead of crashing
