@@ -78,6 +78,8 @@ export interface CanvasNode {
   meshUrl?: string;
   /** True while mesh is being generated */
   meshLoading?: boolean;
+  /** URL to a 2D preview image (shown while 3D mesh generates) */
+  meshPreviewUrl?: string;
   /** Error message if mesh generation failed */
   meshError?: string;
 }

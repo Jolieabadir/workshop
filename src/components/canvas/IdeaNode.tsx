@@ -216,6 +216,58 @@ function MeshLoadingPlaceholder() {
   );
 }
 
+// 2D preview billboard placeholder (shown while 3D mesh generates)
+function MeshPreviewPlaceholder({ previewUrl }: { previewUrl: string }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+
+  // Load the preview image as a texture
+  useEffect(() => {
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      previewUrl,
+      (loadedTexture) => {
+        loadedTexture.colorSpace = THREE.SRGBColorSpace;
+        setTexture(loadedTexture);
+      },
+      undefined,
+      (error) => {
+        console.warn('[MESH PREVIEW] Failed to load preview image:', error);
+      }
+    );
+
+    return () => {
+      if (texture) {
+        texture.dispose();
+      }
+    };
+  }, [previewUrl]);
+
+  // Gentle floating animation
+  useFrame((_, delta) => {
+    if (meshRef.current) {
+      meshRef.current.rotation.y += delta * 0.2;
+    }
+  });
+
+  if (!texture) {
+    // Fall back to wireframe while texture loads
+    return <MeshLoadingPlaceholder />;
+  }
+
+  return (
+    <mesh ref={meshRef}>
+      <planeGeometry args={[2, 2]} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        opacity={0.9}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
 // Hexagonal prism geometry for diagram nodes
 function createHexagonalPrismGeometry(radius: number, height: number): THREE.ExtrudeGeometry {
   const shape = new THREE.Shape();
@@ -359,8 +411,13 @@ export function IdeaNode({ node }: IdeaNodeProps) {
       );
     }
 
-    // If mesh is loading, show wireframe placeholder
+    // If mesh is loading, show preview billboard or wireframe placeholder
     if (node.meshLoading) {
+      // If we have a preview image, show it as a billboard
+      if (node.meshPreviewUrl) {
+        return <MeshPreviewPlaceholder previewUrl={node.meshPreviewUrl} />;
+      }
+      // Otherwise show wireframe cube
       return <MeshLoadingPlaceholder />;
     }
 

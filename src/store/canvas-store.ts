@@ -337,7 +337,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       };
 
       try {
-        // Step 1: Submit task
+        // Step 1: Submit task (may return cached result)
         const submitResponse = await fetch('/api/mesh', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -349,10 +349,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           throw new Error(error.message || 'Failed to submit mesh task');
         }
 
-        const { taskId } = await submitResponse.json();
-        console.log('[CANVAS] Mesh task submitted:', taskId);
+        const submitResult = await submitResponse.json();
 
-        // Step 2: Poll for status
+        // Handle cache hit — instant success, no polling needed
+        if (submitResult.cached && submitResult.modelUrl) {
+          console.log('[CANVAS] Cache hit! Loading from:', submitResult.modelUrl);
+          markSuccess(submitResult.modelUrl);
+          return;
+        }
+
+        const { taskId, cacheHash } = submitResult;
+        console.log('[CANVAS] Mesh task submitted:', taskId, 'cacheHash:', cacheHash);
+
+        // Step 2: Poll for status (with cache params for server-side caching)
         const pollStatus = async () => {
           // Check timeout
           if (Date.now() - startTime > MAX_POLL_TIME_MS) {
@@ -367,13 +376,34 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           }
 
           try {
-            const statusResponse = await fetch(`/api/mesh?taskId=${taskId}`);
+            // Include cache params so server can cache on completion
+            const pollParams = new URLSearchParams({
+              taskId,
+              ...(cacheHash && { hash: cacheHash }),
+              ...(prompt && { prompt }),
+              ...(style && { style }),
+            });
+            const statusResponse = await fetch(`/api/mesh?${pollParams.toString()}`);
             if (!statusResponse.ok) {
               const error = await statusResponse.json();
               throw new Error(error.message || 'Failed to check task status');
             }
 
             const status = await statusResponse.json();
+
+            // Update preview image if available (shown while 3D model generates)
+            if (status.previewImageUrl) {
+              set((s) => ({
+                nodes: {
+                  ...s.nodes,
+                  [id]: s.nodes[id] ? {
+                    ...s.nodes[id],
+                    meshPreviewUrl: status.previewImageUrl,
+                    updatedAt: Date.now(),
+                  } : s.nodes[id],
+                },
+              }));
+            }
 
             if (status.status === 'SUCCEEDED' && status.modelUrl) {
               // Proxy through our API to avoid CORS issues
