@@ -291,13 +291,19 @@ export function parseToolCallToAction(toolName: string, toolInput: Record<string
 
     case 'rotate_node': {
       // Store rotation in metadata since the rotation field may not exist on CanvasNode yet
-      const rotation = toolInput.rotation as Vec3 | undefined;
+      // Ensure all three axes have values (LLM may only specify one axis like {z: 90})
+      const inputRotation = toolInput.rotation as Partial<Vec3> | undefined;
+      const rotation: Vec3 = {
+        x: inputRotation?.x ?? 0,
+        y: inputRotation?.y ?? 0,
+        z: inputRotation?.z ?? 0,
+      };
       return {
         type: 'update_node',
         nodeId: toolInput.nodeId as string,
         changes: {
           metadata: {
-            rotation: rotation || { x: 0, y: 0, z: 0 },
+            rotation,
           },
         },
       };

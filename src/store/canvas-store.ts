@@ -487,13 +487,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }),
 
   updateNode: (id, changes) =>
-    set((s) => ({
-      nodes: {
-        ...s.nodes,
-        [id]: s.nodes[id] ? { ...s.nodes[id], ...changes, updatedAt: Date.now() } : s.nodes[id],
-      },
-      focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
-    })),
+    set((s) => {
+      const existingNode = s.nodes[id];
+      if (!existingNode) return s;
+
+      // Deep merge metadata to preserve rotation when setting scale and vice versa
+      const mergedMetadata = changes.metadata
+        ? { ...existingNode.metadata, ...changes.metadata }
+        : existingNode.metadata;
+
+      return {
+        nodes: {
+          ...s.nodes,
+          [id]: {
+            ...existingNode,
+            ...changes,
+            metadata: mergedMetadata,
+            updatedAt: Date.now(),
+          },
+        },
+        focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
+      };
+    }),
 
   moveNode: (id, position) => {
     set((s) => ({
