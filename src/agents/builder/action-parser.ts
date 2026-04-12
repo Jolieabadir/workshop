@@ -289,6 +289,34 @@ export function parseToolCallToAction(toolName: string, toolInput: Record<string
         nodeId: toolInput.nodeId as string,
       };
 
+    case 'rotate_node': {
+      // Store rotation in metadata since the rotation field may not exist on CanvasNode yet
+      const rotation = toolInput.rotation as Vec3 | undefined;
+      return {
+        type: 'update_node',
+        nodeId: toolInput.nodeId as string,
+        changes: {
+          metadata: {
+            rotation: rotation || { x: 0, y: 0, z: 0 },
+          },
+        },
+      };
+    }
+
+    case 'scale_node': {
+      // Store uniform scale in metadata to avoid conflicts with the scale Vec3 field
+      const scale = toolInput.scale as number | undefined;
+      return {
+        type: 'update_node',
+        nodeId: toolInput.nodeId as string,
+        changes: {
+          metadata: {
+            uniformScale: scale ?? 1,
+          },
+        },
+      };
+    }
+
     case 'respond_verbally':
       return {
         type: 'respond_verbally',

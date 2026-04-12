@@ -189,6 +189,47 @@ export const BUILDER_TOOLS: Tool[] = [
     },
   },
   {
+    name: 'rotate_node',
+    description: 'Rotate a node in 3D space. Use this to fix mesh orientation (e.g. a nose cone generated sideways). Rotation is in degrees on each axis.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        nodeId: {
+          type: 'string',
+          description: 'ID of the node to rotate',
+        },
+        rotation: {
+          type: 'object',
+          properties: {
+            x: { type: 'number', description: 'Rotation in degrees around X axis' },
+            y: { type: 'number', description: 'Rotation in degrees around Y axis' },
+            z: { type: 'number', description: 'Rotation in degrees around Z axis' },
+          },
+          description: 'Rotation in degrees on each axis. Only specify axes that need rotation.',
+        },
+      },
+      required: ['nodeId', 'rotation'],
+    },
+  },
+  {
+    name: 'scale_node',
+    description: 'Scale a node uniformly. Use to resize parts that are too large or too small relative to other parts in an assembly.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        nodeId: {
+          type: 'string',
+          description: 'ID of the node to scale',
+        },
+        scale: {
+          type: 'number',
+          description: 'Uniform scale factor. 1.0 = original size, 0.5 = half size, 2.0 = double size.',
+        },
+      },
+      required: ['nodeId', 'scale'],
+    },
+  },
+  {
     name: 'respond_verbally',
     description: 'Speak to the user via TTS. MUST be called for EVERY response — whether after canvas actions, answering questions, or having conversation. This is how you talk to the user.',
     input_schema: {

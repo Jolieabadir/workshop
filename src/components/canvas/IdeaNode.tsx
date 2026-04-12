@@ -5,7 +5,7 @@ import { Html, RoundedBox, useGLTF } from '@react-three/drei';
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import type { CanvasNode, NodeType, NodeShape } from '@/core/types';
+import type { CanvasNode, NodeType, NodeShape, Vec3 } from '@/core/types';
 import { useCanvasStore } from '@/store/canvas-store';
 import { useHandStore } from '@/store/hand-store';
 import { ComponentGenerator } from './generators';
@@ -347,6 +347,23 @@ export function IdeaNode({ node }: IdeaNodeProps) {
     return null;
   }, [node.shape]);
 
+  // Compute rotation from metadata (degrees to radians)
+  const nodeRotation = useMemo(() => {
+    const rot = (node.metadata?.rotation as Vec3) || { x: 0, y: 0, z: 0 };
+    return [
+      (rot.x * Math.PI) / 180,
+      (rot.y * Math.PI) / 180,
+      (rot.z * Math.PI) / 180,
+    ] as [number, number, number];
+  }, [node.metadata?.rotation]);
+
+  // Compute scale from node.scale or metadata.uniformScale
+  const nodeScale = useMemo(() => {
+    if (node.scale) return [node.scale.x, node.scale.y, node.scale.z] as [number, number, number];
+    const s = (node.metadata?.uniformScale as number) || 1;
+    return [s, s, s] as [number, number, number];
+  }, [node.scale, node.metadata?.uniformScale]);
+
   // Animation: gentle float + hover pulse
   useFrame((_, delta) => {
     if (meshRef.current) {
@@ -554,24 +571,23 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   // Combined hover state (mouse or hand)
   const isAnyHover = hovered || isHandHovered;
 
-  // Apply node scale (from resize gesture or Builder agent)
-  const nodeScale = node.scale ?? { x: 1, y: 1, z: 1 };
-
   return (
     <group
       ref={groupRef}
       position={[node.position.x, node.position.y, node.position.z]}
-      scale={[nodeScale.x, nodeScale.y, nodeScale.z]}
     >
-      {/* The 3D shape */}
-      <mesh
-        ref={meshRef}
-        onClick={handleClick}
-        onPointerOver={handlePointerOver}
-        onPointerOut={handlePointerOut}
-      >
-        {renderShape()}
-      </mesh>
+      {/* Inner group for rotation and scale - node rotates in place, not around origin */}
+      <group rotation={nodeRotation} scale={nodeScale}>
+        {/* The 3D shape */}
+        <mesh
+          ref={meshRef}
+          onClick={handleClick}
+          onPointerOver={handlePointerOver}
+          onPointerOut={handlePointerOut}
+        >
+          {renderShape()}
+        </mesh>
+      </group>
 
       {/* Glow effect ring */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
