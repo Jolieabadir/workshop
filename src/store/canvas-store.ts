@@ -159,6 +159,17 @@ interface CanvasStore extends CanvasState {
   // Owl analysis tracking
   lastAnalyzedAt: number;
   setLastAnalyzedAt: (t: number) => void;
+
+  // Mechanic avatar state
+  mechanicActive: boolean;
+  mechanicTarget: Vec3 | null;
+  setMechanicActive: (active: boolean) => void;
+  setMechanicTarget: (pos: Vec3 | null) => void;
+
+  // Correction highlights (visual feedback rings)
+  correctionHighlights: Array<{ id: string; nodeId: string; type: string; timestamp: number }>;
+  addCorrectionHighlight: (nodeId: string, type: string) => void;
+  removeCorrectionHighlight: (id: string) => void;
 }
 
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
@@ -173,9 +184,31 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isListening: false,
   lastAnalyzedAt: 0,
 
+  // Mechanic avatar state
+  mechanicActive: false,
+  mechanicTarget: null,
+  correctionHighlights: [],
+
   setTranscript: (t) => set({ transcript: t }),
   setListening: (v) => set({ isListening: v }),
   setLastAnalyzedAt: (t) => set({ lastAnalyzedAt: t }),
+
+  // Mechanic state setters
+  setMechanicActive: (active) => set({ mechanicActive: active }),
+  setMechanicTarget: (pos) => set({ mechanicTarget: pos }),
+  addCorrectionHighlight: (nodeId, type) => {
+    const id = uid();
+    set((s) => ({
+      correctionHighlights: [
+        ...s.correctionHighlights,
+        { id, nodeId, type, timestamp: Date.now() },
+      ],
+    }));
+  },
+  removeCorrectionHighlight: (id) =>
+    set((s) => ({
+      correctionHighlights: s.correctionHighlights.filter((h) => h.id !== id),
+    })),
 
   addNode: (type, content, title, position, shape = 'sphere', context) => {
     const id = uid();

@@ -10,6 +10,7 @@ import { useHandStore } from '@/store/hand-store';
 import { IdeaNode } from './IdeaNode';
 import { ConnectionLine } from './ConnectionLine';
 import { BuilderAvatar } from './BuilderAvatar';
+import { MechanicAvatar, CorrectionHighlights } from './MechanicAvatar';
 import { HandCursor } from './HandCursor';
 import { SpatialEngine } from './SpatialEngine';
 import { SceneCapture } from './SceneCapture';
@@ -121,6 +122,12 @@ function SceneContent() {
 
       {/* Builder avatar */}
       <BuilderAvatar />
+
+      {/* Mechanic avatar (appears during visual feedback correction loop) */}
+      <MechanicAvatar />
+
+      {/* Correction highlights (rings around nodes being fixed) */}
+      <CorrectionHighlights />
 
       {/* Hand cursor (follows right hand tracking + handles raycasting interaction) */}
       <HandCursor />

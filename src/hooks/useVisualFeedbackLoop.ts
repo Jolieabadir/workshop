@@ -92,6 +92,9 @@ export function useVisualFeedbackLoop() {
   }, []);
 
   const executeAction = useCanvasStore((s) => s.executeAction);
+  const setMechanicActive = useCanvasStore((s) => s.setMechanicActive);
+  const setMechanicTarget = useCanvasStore((s) => s.setMechanicTarget);
+  const addCorrectionHighlight = useCanvasStore((s) => s.addCorrectionHighlight);
 
   /**
    * Capture frames from the 3D scene.
@@ -237,15 +240,84 @@ export function useVisualFeedbackLoop() {
   }, []);
 
   /**
-   * Apply Mechanic corrections to the canvas store.
+   * Map tool name to correction type for highlighting.
    */
-  const applyCorrections = useCallback((corrections: BuilderAction[]) => {
+  const getCorrectionType = useCallback((toolName: string): string | null => {
+    switch (toolName) {
+      case 'rotate_node':
+        return 'rotate';
+      case 'scale_node':
+        return 'scale';
+      case 'move_node':
+        return 'move';
+      case 'generate_mesh':
+        return 'regenerate';
+      default:
+        return null;
+    }
+  }, []);
+
+  /**
+   * Extract nodeId from a tool call input.
+   */
+  const getNodeIdFromAction = useCallback((action: BuilderAction): string | null => {
+    if ('nodeId' in action && typeof action.nodeId === 'string') {
+      return action.nodeId;
+    }
+    return null;
+  }, []);
+
+  /**
+   * Apply Mechanic corrections to the canvas store.
+   * Also triggers visual feedback (mechanic avatar movement + highlight rings).
+   */
+  const applyCorrections = useCallback(async (corrections: BuilderAction[]) => {
+    const nodes = useCanvasStore.getState().nodes;
+
     for (const action of corrections) {
       // Skip respond_verbally actions - Mechanic shouldn't speak
       if (action.type === 'respond_verbally') continue;
+
+      // Get the nodeId being corrected
+      const nodeId = getNodeIdFromAction(action);
+      const node = nodeId ? nodes[nodeId] : null;
+
+      // Move mechanic avatar to the node being fixed
+      if (node) {
+        setMechanicTarget(node.position);
+        // Small delay to let avatar start moving
+        await new Promise((r) => setTimeout(r, 100));
+      }
+
+      // Execute the correction
       executeAction(action);
+
+      // Add correction highlight based on action type
+      if (nodeId) {
+        let correctionType: string | null = null;
+        if (action.type === 'update_node') {
+          // Check if this is a rotate or scale action (stored in metadata)
+          const changes = action.changes as Record<string, unknown>;
+          if (changes.metadata) {
+            const metadata = changes.metadata as Record<string, unknown>;
+            if ('rotation' in metadata) correctionType = 'rotate';
+            else if ('uniformScale' in metadata) correctionType = 'scale';
+          }
+        } else if (action.type === 'move_node') {
+          correctionType = 'move';
+        } else if (action.type === 'generate_mesh') {
+          correctionType = 'regenerate';
+        }
+
+        if (correctionType) {
+          addCorrectionHighlight(nodeId, correctionType);
+        }
+      }
+
+      // Small delay between corrections for visual effect
+      await new Promise((r) => setTimeout(r, 150));
     }
-  }, [executeAction]);
+  }, [executeAction, setMechanicTarget, addCorrectionHighlight, getNodeIdFromAction]);
 
   /**
    * Wait for React to re-render after applying corrections.
@@ -276,6 +348,9 @@ export function useVisualFeedbackLoop() {
       currentIteration: 0,
       error: null,
     }));
+
+    // Activate mechanic avatar at loop start
+    setMechanicActive(true);
 
     let iteration = 0;
     let lastEval: OwlEvaluation | null = null;
@@ -357,6 +432,10 @@ export function useVisualFeedbackLoop() {
       };
 
     } finally {
+      // Deactivate mechanic avatar at loop end
+      setMechanicActive(false);
+      setMechanicTarget(null);
+
       isRunningRef.current = false;
       setState((s) => ({ ...s, isRunning: false }));
     }
@@ -369,6 +448,8 @@ export function useVisualFeedbackLoop() {
     getMechanicCorrections,
     applyCorrections,
     waitForRender,
+    setMechanicActive,
+    setMechanicTarget,
   ]);
 
   return {
