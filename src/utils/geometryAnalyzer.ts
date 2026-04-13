@@ -32,6 +32,7 @@ export interface PartMetrics {
   worldRotation: Vec3; // Euler angles in degrees
   worldScale: Vec3;
   meshFound: boolean;
+  principalAxis: 'X' | 'Y' | 'Z'; // Which world axis the mesh is longest along
 }
 
 export interface ConnectionMetrics {
@@ -349,6 +350,13 @@ export function analyzeGeometry(
       const transform = getWorldTransform(mesh);
       const volume = bboxMetrics.size.x * bboxMetrics.size.y * bboxMetrics.size.z;
 
+      // Determine principal axis (which world axis the mesh is longest along)
+      const { x: sx, y: sy, z: sz } = bboxMetrics.size;
+      let principalAxis: 'X' | 'Y' | 'Z' = 'Y'; // default vertical
+      if (sx >= sy && sx >= sz) principalAxis = 'X';
+      else if (sy >= sx && sy >= sz) principalAxis = 'Y';
+      else principalAxis = 'Z';
+
       parts.push({
         nodeId: node.id,
         title: node.title || node.content.slice(0, 30),
@@ -360,6 +368,7 @@ export function analyzeGeometry(
         worldRotation: transform.rotation,
         worldScale: transform.scale,
         meshFound: true,
+        principalAxis,
       });
 
       partBboxes.set(node.id, {
@@ -385,6 +394,7 @@ export function analyzeGeometry(
         worldRotation: { x: 0, y: 0, z: 0 },
         worldScale: { x: 1, y: 1, z: 1 },
         meshFound: false,
+        principalAxis: 'Y', // Default to vertical for unknown meshes
       });
 
       partBboxes.set(node.id, {
@@ -499,9 +509,15 @@ export function formatGeometryForPrompt(analysis: GeometryAnalysis): string {
   // Parts
   lines.push('### Parts:');
   for (const part of analysis.parts) {
+    // Determine if principalAxis is correct for a vertical assembly
+    const isVerticalCorrect = part.principalAxis === 'Y';
+    const axisAnnotation = isVerticalCorrect
+      ? `principalAxis=${part.principalAxis} (vertical ✓)`
+      : `principalAxis=${part.principalAxis} (HORIZONTAL — may need rotation for vertical assembly!)`;
+
     lines.push(`- **${part.title}** (${part.nodeId})`);
     lines.push(`  Position: (${part.center.x.toFixed(2)}, ${part.center.y.toFixed(2)}, ${part.center.z.toFixed(2)})`);
-    lines.push(`  Size: ${part.size.x.toFixed(2)} × ${part.size.y.toFixed(2)} × ${part.size.z.toFixed(2)}`);
+    lines.push(`  Size: ${part.size.x.toFixed(2)} × ${part.size.y.toFixed(2)} × ${part.size.z.toFixed(2)}, ${axisAnnotation}`);
     lines.push(`  Rotation: (${part.worldRotation.x.toFixed(1)}°, ${part.worldRotation.y.toFixed(1)}°, ${part.worldRotation.z.toFixed(1)}°)`);
     if (!part.meshFound) {
       lines.push(`  ⚠️ Mesh not loaded yet — measurements are estimates`);
