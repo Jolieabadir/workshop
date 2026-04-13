@@ -151,6 +151,10 @@ async function runPythonAnalysis(frames: InputFrame[]): Promise<MultiViewAnalysi
         // Ignore cleanup errors
       }
 
+      if (stderr.trim()) {
+        console.log('[CV-ANALYZE] Python stderr:', stderr.trim());
+      }
+
       if (code !== 0) {
         console.error('[CV-ANALYZE] Python stderr:', stderr);
         reject(new Error(`Python process exited with code ${code}: ${stderr}`));
@@ -261,6 +265,23 @@ export async function POST(request: NextRequest) {
 
     // Run Python analysis with multi-view triangulation
     const result = await runPythonAnalysis(normalizedFrames);
+
+    // Log detailed per-frame results
+    for (const frame of result.per_frame || []) {
+      console.log(`[CV-ANALYZE] Frame "${frame.frame_name}": ${frame.parts_detected} parts detected, ${frame.gaps?.length || 0} gaps`);
+      if (frame.parts && frame.parts.length > 0) {
+        for (const part of frame.parts) {
+          console.log(`[CV-ANALYZE]   Part ${part.index}: area=${part.area_px}px, orientation=${part.orientation_deg}°, elongation=${part.elongation?.toFixed(2)}`);
+        }
+      }
+      if (frame.error) {
+        console.log(`[CV-ANALYZE]   ERROR: ${frame.error}`);
+      }
+    }
+    if (result.spatial_3d) {
+      console.log(`[CV-ANALYZE] 3D rotations:`, JSON.stringify(result.spatial_3d.estimated_rotations));
+      console.log(`[CV-ANALYZE] 3D gaps:`, JSON.stringify(result.spatial_3d.gaps_3d));
+    }
 
     const elapsed = Date.now() - startTime;
     const rotations = result.spatial_3d?.estimated_rotations?.length ?? 0;

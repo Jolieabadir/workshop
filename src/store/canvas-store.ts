@@ -722,6 +722,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         store.moveNode(action.nodeId, action.position);
         break;
       case 'update_node':
+        // Clamp uniformScale to minimum 0.3 to prevent objects from becoming too small
+        if (action.changes?.metadata?.uniformScale !== undefined && action.changes.metadata.uniformScale !== null) {
+          action.changes.metadata.uniformScale = Math.max(0.3, action.changes.metadata.uniformScale as number);
+        }
         store.updateNode(action.nodeId, action.changes);
         break;
       case 'delete_node':

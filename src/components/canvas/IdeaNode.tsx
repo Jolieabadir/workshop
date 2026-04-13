@@ -1,7 +1,7 @@
 'use client';
 
 import React, { Suspense } from 'react';
-import { Html, RoundedBox, useGLTF } from '@react-three/drei';
+import { Html, RoundedBox, useGLTF, useTexture } from '@react-three/drei';
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { useFrame, ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -105,6 +105,8 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
     ? sortedVolumes[Math.floor(sortedVolumes.length / 2)]
     : 0;
 
+  console.log(`[MESH SANITIZE] Scanning ${meshCount} meshes for problematic geometry...`);
+
   // Second pass: remove problematic meshes
   scene.traverse((child) => {
     if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) {
@@ -115,6 +117,9 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
       localBox.getSize(size);
       const volume = size.x * size.y * size.z;
       const sorted = [size.x, size.y, size.z].sort((a, b) => b - a);
+
+      // Log EVERY mesh's dimensions for debugging
+      console.log(`[MESH SANITIZE] Mesh: ${sorted[0].toFixed(2)}×${sorted[1].toFixed(2)}×${sorted[2].toFixed(2)}, volume=${volume.toFixed(2)}, median=${medianVolume.toFixed(2)}, ratio=${sorted[0] > 0.001 && sorted[2] > 0.001 ? (sorted[0]/sorted[2]).toFixed(1) : 'N/A'}`);
 
       if (sorted[0] > 0.001 && sorted[2] > 0.001 && sorted[0] / sorted[2] > 10) {
         console.log(`[MESH SANITIZE] Removing flat geometry: ${sorted[0].toFixed(2)}×${sorted[1].toFixed(2)}×${sorted[2].toFixed(2)}`);
@@ -198,30 +203,26 @@ class MeshErrorBoundary extends React.Component<MeshErrorBoundaryProps, MeshErro
 
 // Component to render a loaded GLB mesh with aggressive optimization
 function LoadedMesh({ url, color, nodeId }: { url: string; color: string; nodeId: string }) {
-  const [error, setError] = useState(false);
-  const [optimizedScene, setOptimizedScene] = useState<{ scene: THREE.Object3D; scale: number } | null>(null);
-
   // Load the GLB
   const gltf = useGLTF(url);
 
-  // Optimize on load
-  useEffect(() => {
-    if (gltf.scene && !error) {
-      try {
-        const cloned = gltf.scene.clone();
-        const result = optimizeAndScaleScene(cloned);
-        // Stamp nodeId on ROOT only so geometryAnalyzer finds the correct bounding box
-        result.scene.userData = { ...result.scene.userData, nodeId };
-        setOptimizedScene(result);
-      } catch (e) {
-        console.error('[MESH] Optimization failed:', e);
-        setError(true);
-      }
+  // Optimize synchronously using useMemo (avoids setState-in-effect issues)
+  const optimizedScene = useMemo(() => {
+    if (!gltf.scene) return null;
+    try {
+      const cloned = gltf.scene.clone();
+      const result = optimizeAndScaleScene(cloned);
+      // Stamp nodeId on ROOT only so geometryAnalyzer finds the correct bounding box
+      result.scene.userData = { ...result.scene.userData, nodeId };
+      return result;
+    } catch (e) {
+      console.error('[MESH] Optimization failed:', e);
+      return 'error' as const;
     }
-  }, [gltf.scene, error, nodeId]);
+  }, [gltf.scene, nodeId]);
 
   // Handle loading errors
-  if (error) {
+  if (optimizedScene === 'error') {
     return <MeshErrorFallback color={color} />;
   }
 
@@ -268,31 +269,12 @@ function MeshLoadingPlaceholder() {
 }
 
 // 2D preview billboard placeholder (shown while 3D mesh generates)
-function MeshPreviewPlaceholder({ previewUrl }: { previewUrl: string }) {
+function MeshPreviewPlaceholderInner({ previewUrl }: { previewUrl: string }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const [texture, setTexture] = useState<THREE.Texture | null>(null);
 
-  // Load the preview image as a texture
-  useEffect(() => {
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      previewUrl,
-      (loadedTexture) => {
-        loadedTexture.colorSpace = THREE.SRGBColorSpace;
-        setTexture(loadedTexture);
-      },
-      undefined,
-      (error) => {
-        console.warn('[MESH PREVIEW] Failed to load preview image:', error);
-      }
-    );
-
-    return () => {
-      if (texture) {
-        texture.dispose();
-      }
-    };
-  }, [previewUrl]);
+  // Use drei's useTexture hook instead of manual TextureLoader
+  // useTexture handles colorSpace internally
+  const texture = useTexture(previewUrl);
 
   // Gentle floating animation
   useFrame((_, delta) => {
@@ -300,11 +282,6 @@ function MeshPreviewPlaceholder({ previewUrl }: { previewUrl: string }) {
       meshRef.current.rotation.y += delta * 0.2;
     }
   });
-
-  if (!texture) {
-    // Fall back to wireframe while texture loads
-    return <MeshLoadingPlaceholder />;
-  }
 
   return (
     <mesh ref={meshRef}>
@@ -316,6 +293,15 @@ function MeshPreviewPlaceholder({ previewUrl }: { previewUrl: string }) {
         side={THREE.DoubleSide}
       />
     </mesh>
+  );
+}
+
+// Wrapper with Suspense fallback for texture loading
+function MeshPreviewPlaceholder({ previewUrl }: { previewUrl: string }) {
+  return (
+    <Suspense fallback={<MeshLoadingPlaceholder />}>
+      <MeshPreviewPlaceholderInner previewUrl={previewUrl} />
+    </Suspense>
   );
 }
 

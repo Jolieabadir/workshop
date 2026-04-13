@@ -311,13 +311,15 @@ export function parseToolCallToAction(toolName: string, toolInput: Record<string
 
     case 'scale_node': {
       // Store uniform scale in metadata to avoid conflicts with the scale Vec3 field
-      const scale = toolInput.scale as number | undefined;
+      // Clamp to minimum 0.3 to prevent objects from becoming too small
+      const rawScale = toolInput.scale as number | undefined;
+      const scale = Math.max(0.3, rawScale ?? 1);
       return {
         type: 'update_node',
         nodeId: toolInput.nodeId as string,
         changes: {
           metadata: {
-            uniformScale: scale ?? 1,
+            uniformScale: scale,
           },
         },
       };

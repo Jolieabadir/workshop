@@ -40,7 +40,9 @@ export function MechanicAvatar() {
 
   // Mechanic state
   const modeRef = useRef<MechanicMode>('idle');
-  const positionRef = useRef<Vec3>({ x: 2, y: 2, z: 2 });
+  // Initial position - useFrame updates the mesh position dynamically
+  const INITIAL_POSITION: Vec3 = { x: 2, y: 2, z: 2 };
+  const positionRef = useRef<Vec3>(INITIAL_POSITION);
 
   // Canvas store state
   const mechanicActive = useCanvasStore((s) => s.mechanicActive);
@@ -141,8 +143,8 @@ export function MechanicAvatar() {
 
   return (
     <>
-      {/* Main orb */}
-      <mesh ref={meshRef} position={[positionRef.current.x, positionRef.current.y, positionRef.current.z]}>
+      {/* Main orb - useFrame updates position dynamically */}
+      <mesh ref={meshRef} position={[INITIAL_POSITION.x, INITIAL_POSITION.y, INITIAL_POSITION.z]}>
         {/* Inner core */}
         <sphereGeometry args={[MECHANIC_CONFIG.orbSize, 16, 16]} />
         <meshStandardMaterial
@@ -169,8 +171,8 @@ export function MechanicAvatar() {
         </Html>
       </mesh>
 
-      {/* Pulsing ring around orb */}
-      <mesh ref={ringRef} position={[positionRef.current.x, positionRef.current.y, positionRef.current.z]}>
+      {/* Pulsing ring around orb - useFrame updates position dynamically */}
+      <mesh ref={ringRef} position={[INITIAL_POSITION.x, INITIAL_POSITION.y, INITIAL_POSITION.z]}>
         <torusGeometry args={[0.12, 0.01, 8, 32]} />
         <meshStandardMaterial
           color="#4488FF"
