@@ -186,12 +186,12 @@ Think: "What are the structural sections of ONE rocket?"
 → Nose cone (top), Fuselage body (middle), Fin set (bottom sides), Engine nozzle (bottom center)
 
 NOTE: See "ROCKET SHIP — USE THESE EXACT PROMPTS" section below for the CACHED prompts to use.
-The auto-connect system will snap parts together automatically, so positions and connections are optional.
+Parts are automatically placed in a staging line with clear separation. The auto-connect system will then snap them into their final assembly positions.
 
-  generate_mesh({ prompt: "conical rocket nose cone, white metallic, pointed tip", title: "Nose Cone", position: {x:0, y:0, z:0} })
-  generate_mesh({ prompt: "cylindrical rocket fuselage, white with panel lines, open ends", title: "Fuselage", position: {x:0, y:0, z:0} })
-  generate_mesh({ prompt: "set of four triangular rocket fins, red metallic, radial arrangement", title: "Fins", position: {x:0, y:0, z:0} })
-  generate_mesh({ prompt: "rocket engine bell nozzle, dark metallic with heat discoloration", title: "Engine", position: {x:0, y:0, z:0} })
+  generate_mesh({ prompt: "conical rocket nose cone, white metallic, pointed tip", title: "Nose Cone" })
+  generate_mesh({ prompt: "cylindrical rocket fuselage, white with panel lines, open ends", title: "Fuselage" })
+  generate_mesh({ prompt: "set of four triangular rocket fins, red metallic, radial arrangement", title: "Fins" })
+  generate_mesh({ prompt: "rocket engine bell nozzle, dark metallic with heat discoloration", title: "Engine" })
   group_nodes: nodeIds=[noseCone, fuselage, fins, engine], label="Rocket"
   respond_verbally: "Built your rocket — nose cone, fuselage, fins, and engine."
 
@@ -253,28 +253,24 @@ When the user says "build a rocket", "build a rocketship", "build a rocket ship"
 
   generate_mesh({
     prompt: "conical rocket nose cone, white metallic, pointed tip",
-    title: "Nose Cone",
-    position: {x:0, y:0, z:0}
+    title: "Nose Cone"
   })
   generate_mesh({
     prompt: "cylindrical rocket fuselage, white with panel lines, open ends",
-    title: "Fuselage",
-    position: {x:0, y:0, z:0}
+    title: "Fuselage"
   })
   generate_mesh({
     prompt: "set of four triangular rocket fins, red metallic, radial arrangement",
-    title: "Fins",
-    position: {x:0, y:0, z:0}
+    title: "Fins"
   })
   generate_mesh({
     prompt: "rocket engine bell nozzle, dark metallic with heat discoloration",
-    title: "Engine",
-    position: {x:0, y:0, z:0}
+    title: "Engine"
   })
   group_nodes: nodeIds=[noseCone, fuselage, fins, engine], label="Rocket"
   respond_verbally: "Built your rocket with nose cone, fuselage, fins, and engine."
 
-IMPORTANT: Copy these prompts CHARACTER FOR CHARACTER. Even small changes like "white metallic" vs "metallic white" will cause a cache miss and waste API credits. The auto-connect system will snap the parts together automatically.
+IMPORTANT: Copy these prompts CHARACTER FOR CHARACTER. Even small changes like "white metallic" vs "metallic white" will cause a cache miss and waste API credits. Parts are automatically placed in a staging line, then the auto-connect system snaps them into assembly.
 
 ═══════════════════════════════════════════════════════════════
 DECOMPOSITION ANTI-PATTERNS — NEVER DO THESE

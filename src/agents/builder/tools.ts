@@ -80,7 +80,7 @@ export const BUILDER_TOOLS: Tool[] = [
   },
   {
     name: 'create_connection',
-    description: 'Create a connection/edge between two existing nodes to show a relationship. For electronic components, use fromPort/toPort to connect at specific connector points.',
+    description: 'Create a connection/edge between two existing nodes to show a relationship. For electronic components, use fromPort/toPort to connect at specific connector points. MANDATORY after multi-part builds. Every generate_mesh decomposition MUST be followed by create_connection calls between adjacent parts and a group_nodes call. An assembly without connections is broken.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -110,7 +110,7 @@ export const BUILDER_TOOLS: Tool[] = [
   },
   {
     name: 'group_nodes',
-    description: 'Group multiple nodes together under a label to show they belong to a category or cluster.',
+    description: 'Group multiple nodes together under a label to show they belong to a category or cluster. MANDATORY after multi-part builds. Always call this after connecting all parts to make the assembly grabbable as one unit.',
     input_schema: {
       type: 'object' as const,
       properties: {

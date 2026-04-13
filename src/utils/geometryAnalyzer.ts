@@ -138,6 +138,10 @@ function findMeshForNode(scene: THREE.Scene, nodeId: string): THREE.Object3D | n
     }
   });
 
+  if (found) {
+    (found as THREE.Object3D).updateWorldMatrix(true, true);
+  }
+
   return found;
 }
 
@@ -150,6 +154,7 @@ function computeBoundingBoxMetrics(object: THREE.Object3D): {
   min: Vec3;
   max: Vec3;
 } {
+  object.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(object);
   const center = new THREE.Vector3();
   const size = new THREE.Vector3();

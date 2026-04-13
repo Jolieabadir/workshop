@@ -148,7 +148,7 @@ class MeshErrorBoundary extends React.Component<MeshErrorBoundaryProps, MeshErro
 }
 
 // Component to render a loaded GLB mesh with aggressive optimization
-function LoadedMesh({ url, color }: { url: string; color: string }) {
+function LoadedMesh({ url, color, nodeId }: { url: string; color: string; nodeId: string }) {
   const [error, setError] = useState(false);
   const [optimizedScene, setOptimizedScene] = useState<{ scene: THREE.Object3D; scale: number } | null>(null);
 
@@ -161,13 +161,17 @@ function LoadedMesh({ url, color }: { url: string; color: string }) {
       try {
         const cloned = gltf.scene.clone();
         const result = optimizeAndScaleScene(cloned);
+        // Stamp nodeId on all children so geometryAnalyzer can find this mesh
+        result.scene.traverse((child) => {
+          child.userData = { ...child.userData, nodeId };
+        });
         setOptimizedScene(result);
       } catch (e) {
         console.error('[MESH] Optimization failed:', e);
         setError(true);
       }
     }
-  }, [gltf.scene, error]);
+  }, [gltf.scene, error, nodeId]);
 
   // Handle loading errors
   if (error) {
@@ -187,10 +191,10 @@ function LoadedMesh({ url, color }: { url: string; color: string }) {
 }
 
 // Wrapper with error boundary
-function SafeLoadedMesh({ url, color }: { url: string; color: string }) {
+function SafeLoadedMesh({ url, color, nodeId }: { url: string; color: string; nodeId: string }) {
   return (
     <MeshErrorBoundary fallbackColor={color}>
-      <LoadedMesh url={url} color={color} />
+      <LoadedMesh url={url} color={color} nodeId={nodeId} />
     </MeshErrorBoundary>
   );
 }
@@ -423,7 +427,7 @@ export function IdeaNode({ node }: IdeaNodeProps) {
     if (node.meshUrl) {
       return (
         <Suspense fallback={<MeshLoadingPlaceholder />}>
-          <SafeLoadedMesh url={node.meshUrl} color={node.color || TYPE_COLORS[node.type]} />
+          <SafeLoadedMesh url={node.meshUrl} color={node.color || TYPE_COLORS[node.type]} nodeId={node.id} />
         </Suspense>
       );
     }

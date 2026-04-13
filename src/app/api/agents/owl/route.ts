@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
       const response = await anthropic.messages.create({
         model,
         max_tokens: frames && frames.length > 0 ? 1024 : 512,
-        system: OWL_SYSTEM_PROMPT,
+        system: OWL_SYSTEM_PROMPT + '\n\nAPPROVAL CRITERIA — BE STRICT: Do NOT approve an assembly if:\n- Any gap between connected parts exceeds 0.2 world units\n- Any part appears rotated more than 15 degrees from its expected orientation\n- Any part\'s scale ratio is off by more than 50% from what\'s expected\n- Parts are visually overlapping or clipping through each other\nOnly approve when the assembly genuinely looks like a coherent, correctly assembled object. When in doubt, do NOT approve — flag the issues instead.',
         tools: OWL_TOOLS,
         tool_choice: { type: 'auto' },
         messages: [

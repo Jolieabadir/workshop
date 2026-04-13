@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
           response = await anthropic.messages.create({
             model: AGENT_MODELS.mechanic,
             max_tokens: AGENT_MAX_TOKENS.mechanic,
-            system: MECHANIC_SYSTEM_PROMPT,
+            system: MECHANIC_SYSTEM_PROMPT + '\n\nCORRECTION INTENSITY: Apply corrections aggressively in a SINGLE step. If a part needs to be scaled to 0.3x, set scale to 0.3 — do NOT make timid adjustments like 0.7. If a part needs to rotate 90 degrees, rotate the full 90 degrees. If a part needs to move 2 units, move the full 2 units. You have limited iterations — make each one count. Undercorrecting is worse than overcorrecting.',
             tools: MECHANIC_TOOLS,
             tool_choice: { type: 'auto' },
             messages,

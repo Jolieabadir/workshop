@@ -277,7 +277,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const id = uid();
     const now = Date.now();
     const state = get();
-    const pos = position ?? findContextAwarePosition(state.nodes, state.groups);
+
+    // Detect "don't care" position (Builder sends {0,0,0} for decomposed parts)
+    const isDefaultPosition = !position ||
+      (Math.abs(position.x) < 0.1 && Math.abs(position.y) < 0.1 && Math.abs(position.z) < 0.1);
+
+    let pos: Vec3;
+    if (isDefaultPosition) {
+      // Count existing mesh/placeholder nodes to determine staging offset
+      const meshNodeCount = Object.values(state.nodes).filter(
+        n => n.meshUrl || n.meshLoading
+      ).length;
+
+      // Space parts along X axis with 3 unit gaps, centered around origin
+      // Y at 1.5 so they're visible, Z at 0
+      const STAGING_SPACING = 3.0;
+      const stagingX = meshNodeCount * STAGING_SPACING; // 0, 3, 6, 9...
+      pos = { x: stagingX, y: 1.5, z: 0 };
+
+      console.log(`[MESH] Staging position for part #${meshNodeCount + 1}: x=${stagingX}`);
+    } else {
+      pos = position!;
+    }
 
     // Create placeholder node with loading state
     set((s) => ({

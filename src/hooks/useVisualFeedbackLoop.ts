@@ -518,12 +518,14 @@ export function useVisualFeedbackLoop() {
           geometryAnalysis
         );
 
-        if (corrections.length === 0) {
-          console.log('[FEEDBACK LOOP] Mechanic returned no corrections, stopping');
+        // Filter out respond_verbally from correction count
+        const spatialCorrections = corrections.filter(a => a.type !== 'respond_verbally');
+        console.log(`[FEEDBACK LOOP] Mechanic applied ${spatialCorrections.length} spatial corrections (${corrections.length - spatialCorrections.length} verbal)`);
+
+        if (spatialCorrections.length === 0) {
+          console.log('[FEEDBACK LOOP] No spatial corrections, stopping');
           break;
         }
-
-        console.log(`[FEEDBACK LOOP] Mechanic applied ${corrections.length} corrections`);
 
         // Step 6: Apply corrections
         applyCorrections(corrections);
