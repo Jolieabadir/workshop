@@ -195,9 +195,9 @@ export async function POST(request: NextRequest) {
       const response = await anthropic.messages.create({
         model,
         max_tokens: frames && frames.length > 0 ? 1024 : 512,
-        system: OWL_SYSTEM_PROMPT + '\n\nAPPROVAL CRITERIA — BE STRICT: Do NOT approve an assembly if:\n- Any gap between connected parts exceeds 0.2 world units\n- Any part appears rotated more than 15 degrees from its expected orientation\n- Any part\'s scale ratio is off by more than 50% from what\'s expected\n- Parts are visually overlapping or clipping through each other\nOnly approve when the assembly genuinely looks like a coherent, correctly assembled object. When in doubt, do NOT approve — flag the issues instead.',
+        system: OWL_SYSTEM_PROMPT + '\n\nAPPROVAL CRITERIA — BE STRICT: Do NOT approve an assembly if:\n- Any gap between connected parts exceeds 0.2 world units\n- Any part appears rotated more than 15 degrees from its expected orientation\n- Any part\'s scale ratio is off by more than 50% from what\'s expected\n- Parts are visually overlapping or clipping through each other\nOnly approve when the assembly genuinely looks like a coherent, correctly assembled object. When in doubt, do NOT approve — flag the issues instead.\n\nCRITICAL — TOOL USAGE IS MANDATORY:\nYou MUST use the evaluate_part tool for EVERY part in the assembly, even if it looks correct (use issue: \'none\' and severity: \'none\' for correct parts). You MUST use evaluate_assembly as your FINAL tool call with your overall verdict. Do NOT just write text — you MUST call these tools. A response without tool calls is invalid.',
         tools: OWL_TOOLS,
-        tool_choice: { type: 'auto' },
+        tool_choice: { type: 'any' },
         messages: [
           {
             role: 'user',
@@ -205,6 +205,12 @@ export async function POST(request: NextRequest) {
           },
         ],
       });
+
+      // Log what Owl returned for debugging
+      console.log('[OWL] Raw response content:', JSON.stringify(response.content.map(b =>
+        b.type === 'text' ? { type: 'text', preview: (b.text || '').slice(0, 200) } : { type: b.type, name: 'name' in b ? b.name : undefined }
+      )));
+      console.log('[OWL] Stop reason:', response.stop_reason);
 
       const result = parseOwlToolCalls(response.content);
 
@@ -246,6 +252,49 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+
+      // Fallback: if Owl returned no tool calls (text-only response), construct a basic evaluation
+      const hasVisualMode = frames && frames.length > 0;
+      const hasNoToolCalls = partEvaluations.length === 0 && !assemblyVerdict;
+
+      if (hasVisualMode && hasNoToolCalls) {
+        console.warn('[OWL] No tool calls received in visual mode — constructing fallback evaluation');
+
+        // Extract text response if any for logging
+        const textContent = response.content
+          .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+          .map(b => b.text)
+          .join('\n');
+        if (textContent) {
+          console.log('[OWL] Text response was:', textContent.slice(0, 500));
+        }
+
+        // Create a NOT_APPROVED verdict so the loop knows something went wrong
+        assemblyVerdict = {
+          verdict: 'NOT_APPROVED',
+          summary: 'Owl did not produce structured evaluation — possible tool call failure',
+          issueCount: 1,
+        };
+
+        // Add a synthetic evaluation so the Mechanic has something to work with
+        const nodeIds = Object.keys(canvasState.nodes);
+        if (nodeIds.length > 0) {
+          partEvaluations.push({
+            nodeId: nodeIds[0],
+            partName: canvasState.nodes[nodeIds[0]]?.title || 'Unknown',
+            issue: 'none',
+            severity: 'minor',
+            details: 'Owl could not evaluate — check assembly manually',
+            suggestedFix: undefined,
+          });
+        }
+      }
+
+      console.log('[OWL] Final response:', {
+        partEvaluations: partEvaluations.length,
+        assemblyVerdict: assemblyVerdict?.verdict,
+        issueCount: assemblyVerdict?.issueCount,
+      });
 
       return NextResponse.json({
         ...result,
