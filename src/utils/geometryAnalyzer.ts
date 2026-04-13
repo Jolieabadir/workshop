@@ -133,7 +133,8 @@ function findMeshForNode(scene: THREE.Scene, nodeId: string): THREE.Object3D | n
   let found: THREE.Object3D | null = null;
 
   scene.traverse((object) => {
-    if (object.userData?.nodeId === nodeId) {
+    // Return FIRST match (outermost) to get full bounding box, not a deep child
+    if (!found && object.userData?.nodeId === nodeId) {
       found = object;
     }
   });
@@ -763,6 +764,13 @@ export function computeAutoConnections(
 
     if (mesh) {
       const bboxMetrics = computeBoundingBoxMetrics(mesh);
+
+      // Skip parts with zero-size bounding boxes (mesh not fully loaded yet)
+      if (bboxMetrics.size.x < 0.001 || bboxMetrics.size.y < 0.001 || bboxMetrics.size.z < 0.001) {
+        console.warn(`[AUTO-CONNECT] Skipping "${title}" — bounding box too small (not loaded?): ${bboxMetrics.size.x.toFixed(4)}×${bboxMetrics.size.y.toFixed(4)}×${bboxMetrics.size.z.toFixed(4)}`);
+        continue;
+      }
+
       const volume = bboxMetrics.size.x * bboxMetrics.size.y * bboxMetrics.size.z;
 
       // Determine role from name FIRST
@@ -829,8 +837,16 @@ export function computeAutoConnections(
   const anchorHeight = anchorPart.size.y;
   const anchorTopY = anchorPart.bbox.max.y;
   const anchorBottomY = anchorPart.bbox.min.y;
-  const anchorCenterX = (anchorPart.bbox.min.x + anchorPart.bbox.max.x) / 2;
-  const anchorCenterZ = (anchorPart.bbox.min.z + anchorPart.bbox.max.z) / 2;
+  const anchorCenterX = anchorPart.center.x;
+  const anchorCenterZ = anchorPart.center.z;
+
+  // Guard against NaN anchor values
+  if (!Number.isFinite(anchorTopY) || !Number.isFinite(anchorBottomY) ||
+      !Number.isFinite(anchorCenterX) || !Number.isFinite(anchorCenterZ) ||
+      !Number.isFinite(anchorHeight) || anchorHeight < 0.001) {
+    console.warn(`[AUTO-CONNECT] Anchor "${anchorPart.title}" has invalid bbox values, skipping all connections`);
+    return [];
+  }
 
   for (const part of parts) {
     if (part.nodeId === anchorPart.nodeId) continue;

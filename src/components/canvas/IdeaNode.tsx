@@ -161,10 +161,8 @@ function LoadedMesh({ url, color, nodeId }: { url: string; color: string; nodeId
       try {
         const cloned = gltf.scene.clone();
         const result = optimizeAndScaleScene(cloned);
-        // Stamp nodeId on all children so geometryAnalyzer can find this mesh
-        result.scene.traverse((child) => {
-          child.userData = { ...child.userData, nodeId };
-        });
+        // Stamp nodeId on ROOT only so geometryAnalyzer finds the correct bounding box
+        result.scene.userData = { ...result.scene.userData, nodeId };
         setOptimizedScene(result);
       } catch (e) {
         console.error('[MESH] Optimization failed:', e);
