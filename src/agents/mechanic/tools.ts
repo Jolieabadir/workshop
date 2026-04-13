@@ -231,4 +231,26 @@ export const MECHANIC_TOOLS: Tool[] = [
       required: ['nodeIds', 'label'],
     },
   },
+  {
+    name: 'request_regeneration',
+    description: 'Request that a mesh be regenerated with a better prompt. Use this when a part has fundamentally bad geometry (extreme flatness ratio > 8:1, wrong shape entirely) that cannot be fixed with rotation, scaling, or repositioning. The mesh will be regenerated with your improved prompt.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        nodeId: {
+          type: 'string',
+          description: 'ID of the node with the bad mesh',
+        },
+        reason: {
+          type: 'string',
+          description: 'Why the mesh is unfixable (e.g. "flat disc instead of bell nozzle, 250:1 aspect ratio")',
+        },
+        improvedPrompt: {
+          type: 'string',
+          description: 'A better prompt for mesh generation. Include "3D", "solid", viewing angle, and explicit shape description.',
+        },
+      },
+      required: ['nodeId', 'reason', 'improvedPrompt'],
+    },
+  },
 ];

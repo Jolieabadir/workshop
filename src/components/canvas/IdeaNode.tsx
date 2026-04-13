@@ -140,6 +140,14 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
   const box = new THREE.Box3().setFromObject(scene);
   const size = new THREE.Vector3();
   box.getSize(size);
+
+  // Mesh quality validation — detect flat or degenerate meshes
+  const aspectRatios = [size.x, size.y, size.z].sort((a, b) => b - a);
+  const flatnessRatio = aspectRatios[0] / (aspectRatios[2] + 0.001);
+  if (flatnessRatio > 8) {
+    console.warn(`[MESH QUALITY] WARNING: Mesh is very flat (ratio ${flatnessRatio.toFixed(1)}:1). Dimensions: ${size.x.toFixed(2)}×${size.y.toFixed(2)}×${size.z.toFixed(2)}. This mesh may not work well in assemblies.`);
+  }
+
   const maxDimension = Math.max(size.x, size.y, size.z);
   const scale = maxDimension > 0 ? TARGET_MESH_SIZE / maxDimension : 1;
 

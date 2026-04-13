@@ -457,6 +457,9 @@ export function useVisualFeedbackLoop() {
     let iteration = 0;
     let lastEval: OwlEvaluation | null = null;
 
+    // Track corrections to detect loops (same correction repeated = mesh is unfixable)
+    const correctionHistory = new Map<string, string[]>(); // nodeId -> array of correction signatures
+
     try {
       // Auto-connect disabled — Builder's semantic positioning + Mechanic corrections
       // handle assembly better than rule-based snapping
@@ -538,10 +541,40 @@ export function useVisualFeedbackLoop() {
           break;
         }
 
-        // Step 6: Apply corrections
-        applyCorrections(corrections);
+        // Step 6: Filter out duplicate corrections to prevent loops
+        const filteredCorrections: BuilderAction[] = [];
+        for (const action of corrections) {
+          // Detect correction loops
+          const changes = 'changes' in action ? action.changes as Record<string, unknown> : undefined;
+          const metadata = changes?.metadata as Record<string, unknown> | undefined;
+          const corrSig = JSON.stringify({
+            type: action.type,
+            nodeId: getNodeIdFromAction(action),
+            rotation: action.type === 'update_node' ? metadata?.rotation : undefined,
+            scale: action.type === 'update_node' ? metadata?.uniformScale : undefined,
+          });
+          const nodeId = getNodeIdFromAction(action);
+          if (nodeId) {
+            const history = correctionHistory.get(nodeId) || [];
+            if (history.includes(corrSig)) {
+              console.warn(`[FEEDBACK LOOP] Skipping duplicate correction for ${nodeId}: ${corrSig}`);
+              continue; // Skip this correction — it already failed
+            }
+            history.push(corrSig);
+            correctionHistory.set(nodeId, history);
+          }
+          filteredCorrections.push(action);
+        }
 
-        // Step 7: Wait for re-render
+        if (filteredCorrections.length === 0) {
+          console.log('[FEEDBACK LOOP] All corrections were duplicates, stopping');
+          break;
+        }
+
+        // Step 7: Apply corrections
+        applyCorrections(filteredCorrections);
+
+        // Step 8: Wait for re-render
         await waitForRender();
       }
 

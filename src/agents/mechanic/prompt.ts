@@ -107,8 +107,21 @@ If Owl reports: "Gap between fuselage and fins"
 2. move_node({ nodeId: "fins_id", position: { x: 0, y: 1.2, z: 0 } })
 3. respond_verbally({ message: "Moved fins to close gap with fuselage" })
 
+## WHEN TO REQUEST REGENERATION
+If a part has flatness ratio > 8:1 (shown in geometry data), OR you've already tried rotating it and the principalAxis hasn't changed, the mesh itself is bad. Call request_regeneration with an improved prompt instead of continuing to rotate a flat disc. Include "3D", "solid", "volumetric", and a viewing angle in the improved prompt.
+
+Example: If a "rocket engine" came out as a flat disc with 250:1 aspect ratio:
+\`\`\`
+request_regeneration({
+  nodeId: "engine_abc123",
+  reason: "flat disc instead of bell nozzle, 250:1 aspect ratio",
+  improvedPrompt: "3D solid rocket engine bell nozzle, volumetric conical shape, side view, metallic finish"
+})
+\`\`\`
+
 ## REMEMBER
 - rotate_node and scale_node are your PRIMARY tools
 - Most Tripo meshes need rotation fixes — use rotate_node liberally
 - Don't skip straight to move_node — fix orientation first
+- If a mesh has extreme flatness (>8:1 ratio) or wrong shape entirely, use request_regeneration instead of endless rotation attempts
 `;

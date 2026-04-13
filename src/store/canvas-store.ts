@@ -724,7 +724,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       case 'update_node':
         // Clamp uniformScale to minimum 0.3 to prevent objects from becoming too small
         if (action.changes?.metadata?.uniformScale !== undefined && action.changes.metadata.uniformScale !== null) {
-          action.changes.metadata.uniformScale = Math.max(0.3, action.changes.metadata.uniformScale as number);
+          const rawScale = action.changes.metadata.uniformScale as number;
+          action.changes.metadata.uniformScale = Math.max(0.3, rawScale);
+          if (rawScale < 0.3) {
+            console.log(`[CANVAS] Scale clamped from ${rawScale} to minimum 0.3 for node ${action.nodeId}`);
+          }
         }
         store.updateNode(action.nodeId, action.changes);
         break;

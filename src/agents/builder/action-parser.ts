@@ -314,6 +314,9 @@ export function parseToolCallToAction(toolName: string, toolInput: Record<string
       // Clamp to minimum 0.3 to prevent objects from becoming too small
       const rawScale = toolInput.scale as number | undefined;
       const scale = Math.max(0.3, rawScale ?? 1);
+      if (rawScale !== undefined && rawScale < 0.3) {
+        console.log(`[ACTION PARSER] Scale clamped from ${rawScale} to minimum 0.3 for node ${toolInput.nodeId}`);
+      }
       return {
         type: 'update_node',
         nodeId: toolInput.nodeId as string,
