@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useCanvasStore } from '@/store/canvas-store';
 import { parseToolCallToAction } from '@/agents/builder/action-parser';
-import { getCaptureFrames } from '@/components/canvas/SceneCapture';
+import { getCaptureFrames, type CapturedFrame } from '@/components/canvas/SceneCapture';
 import {
   analyzeGeometry,
   formatGeometryForPrompt,
@@ -106,8 +106,9 @@ export function useVisualFeedbackLoop() {
   /**
    * Capture frames from the 3D scene.
    * Uses the getCaptureFrames function exported from SceneCapture.
+   * Returns full CapturedFrame[] with { name, image } for cv-analyze to use view names.
    */
-  const captureFrames = useCallback(async (): Promise<string[]> => {
+  const captureFrames = useCallback(async (): Promise<CapturedFrame[]> => {
     try {
       // Get the capture function from the module export
       const captureFn = getCaptureFrames();
@@ -115,9 +116,8 @@ export function useVisualFeedbackLoop() {
         console.warn('[FEEDBACK LOOP] getCaptureFrames not available (SceneCapture not mounted)');
         return [];
       }
-      // captureFn returns CapturedFrame[] with { name, image } — extract just the image strings
-      const capturedFrames = await captureFn();
-      return capturedFrames.map((frame) => frame.image);
+      // Return full CapturedFrame[] with names ('front', 'side', 'top') for cv-analyze
+      return await captureFn();
     } catch (error) {
       console.error('[FEEDBACK LOOP] Error capturing frames:', error);
       return [];
@@ -126,11 +126,14 @@ export function useVisualFeedbackLoop() {
 
   /**
    * Call OpenCV analysis API to get structured metrics.
+   * Sends frames with names ('front', 'side', 'top') for multi-view triangulation.
    */
-  const analyzeCVMetrics = useCallback(async (frames: string[]): Promise<CVMetrics | null> => {
+  const analyzeCVMetrics = useCallback(async (frames: CapturedFrame[]): Promise<CVMetrics | null> => {
     if (frames.length === 0) return null;
 
     try {
+      // Send frames with names so Python script can do multi-view triangulation
+      // The cv-analyze route accepts { name, image }[] format
       const response = await fetch('/api/cv-analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -466,9 +469,9 @@ export function useVisualFeedbackLoop() {
 
         setState((s) => ({ ...s, currentIteration: iteration }));
 
-        // Step 1: Capture frames from 3D scene
+        // Step 1: Capture frames from 3D scene (with names for cv-analyze)
         const frames = await captureFrames();
-        console.log(`[FEEDBACK LOOP] Captured ${frames.length} frames`);
+        console.log(`[FEEDBACK LOOP] Captured ${frames.length} frames: ${frames.map(f => f.name).join(', ')}`);
 
         // Abort if no frames captured — can't evaluate without visual input
         if (frames.length === 0) {
@@ -477,7 +480,10 @@ export function useVisualFeedbackLoop() {
           break;
         }
 
-        // Step 2: Get OpenCV metrics (optional - may not be available)
+        // Extract just image strings for Owl (Claude Vision doesn't need view names)
+        const frameImages = frames.map(f => f.image);
+
+        // Step 2: Get OpenCV metrics (uses frame names for multi-view triangulation)
         const cvMetrics = await analyzeCVMetrics(frames);
         if (cvMetrics) {
           console.log('[FEEDBACK LOOP] CV metrics received');
@@ -489,9 +495,9 @@ export function useVisualFeedbackLoop() {
           console.log(`[FEEDBACK LOOP] Geometry analysis: ${geometryAnalysis.parts.length} parts with exact 3D measurements`);
         }
 
-        // Step 3: Get Owl evaluation
+        // Step 3: Get Owl evaluation (uses image strings only)
         const canvasState = getCanvasState();
-        const owlEvaluation = await getOwlEvaluation(frames, cvMetrics, canvasState, geometryAnalysis);
+        const owlEvaluation = await getOwlEvaluation(frameImages, cvMetrics, canvasState, geometryAnalysis);
 
         if (!owlEvaluation) {
           console.error('[FEEDBACK LOOP] Owl evaluation failed, stopping');
@@ -514,10 +520,10 @@ export function useVisualFeedbackLoop() {
 
         console.log(`[FEEDBACK LOOP] Owl: NOT_APPROVED (${issueCount} issues)`);
 
-        // Step 5: Get Mechanic corrections
+        // Step 5: Get Mechanic corrections (uses image strings only)
         const corrections = await getMechanicCorrections(
           owlEvaluation,
-          frames,
+          frameImages,
           cvMetrics,
           canvasState,
           geometryAnalysis
