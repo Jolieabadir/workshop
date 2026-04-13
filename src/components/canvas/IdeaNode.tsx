@@ -83,30 +83,53 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
     }
   });
 
-  // Remove invisible objects and non-mesh helpers that inflate bounding box
+  // === UNIVERSAL GLB SANITIZATION ===
+  // Strip invisible/inflated geometry common in AI-generated GLBs
   const toRemove: THREE.Object3D[] = [];
+  const meshVolumes: number[] = [];
+
+  // First pass: collect mesh volumes
   scene.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      // Remove meshes with zero or near-zero opacity (invisible ground planes)
-      const mat = child.material as THREE.Material;
-      if (mat && 'opacity' in mat && (mat as THREE.MeshStandardMaterial).opacity < 0.1) {
+    if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) {
+      const localBox = new THREE.Box3().setFromBufferAttribute(
+        child.geometry.attributes.position as THREE.BufferAttribute
+      );
+      const size = new THREE.Vector3();
+      localBox.getSize(size);
+      meshVolumes.push(size.x * size.y * size.z);
+    }
+  });
+
+  const sortedVolumes = [...meshVolumes].sort((a, b) => a - b);
+  const medianVolume = sortedVolumes.length > 0
+    ? sortedVolumes[Math.floor(sortedVolumes.length / 2)]
+    : 0;
+
+  // Second pass: remove problematic meshes
+  scene.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.geometry?.attributes?.position) {
+      const localBox = new THREE.Box3().setFromBufferAttribute(
+        child.geometry.attributes.position as THREE.BufferAttribute
+      );
+      const size = new THREE.Vector3();
+      localBox.getSize(size);
+      const volume = size.x * size.y * size.z;
+      const sorted = [size.x, size.y, size.z].sort((a, b) => b - a);
+
+      if (sorted[0] > 0.001 && sorted[2] > 0.001 && sorted[0] / sorted[2] > 10) {
+        console.log(`[MESH SANITIZE] Removing flat geometry: ${sorted[0].toFixed(2)}×${sorted[1].toFixed(2)}×${sorted[2].toFixed(2)}`);
         toRemove.push(child);
-      }
-      // Remove extremely large flat meshes (ground planes) — aspect ratio > 15:1
-      const geo = child.geometry;
-      if (geo && geo.attributes.position) {
-        const bbox = new THREE.Box3().setFromBufferAttribute(geo.attributes.position as THREE.BufferAttribute);
-        const geoSize = new THREE.Vector3();
-        bbox.getSize(geoSize);
-        const sorted = [geoSize.x, geoSize.y, geoSize.z].sort((a, b) => b - a);
-        if (sorted[0] > 0 && sorted[2] > 0 && sorted[0] / sorted[2] > 15) {
-          console.log(`[MESH] Removing flat geometry (aspect ratio ${(sorted[0] / sorted[2]).toFixed(1)}:1)`);
-          toRemove.push(child);
-        }
+      } else if (medianVolume > 0 && volume > medianVolume * 100 && meshVolumes.length > 1) {
+        console.log(`[MESH SANITIZE] Removing volume outlier: ${volume.toFixed(2)} vs median ${medianVolume.toFixed(2)}`);
+        toRemove.push(child);
       }
     }
   });
-  toRemove.forEach((obj) => obj.parent?.remove(obj));
+
+  if (toRemove.length > 0) {
+    console.log(`[MESH SANITIZE] Removed ${toRemove.length} problematic mesh(es)`);
+    toRemove.forEach(obj => obj.parent?.remove(obj));
+  }
 
   // Compute bounding box and scale to fit target size
   const box = new THREE.Box3().setFromObject(scene);
