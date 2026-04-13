@@ -185,26 +185,49 @@ export async function POST(request: NextRequest) {
       text: textContent,
     });
 
-    // Wrap API call in try-catch to gracefully handle failures
+    // Wrap API call in try-catch with retry logic for 529 overloaded errors
     try {
       // Use Sonnet for visual evaluation (better at image analysis), Haiku for text-only
       const model = frames && frames.length > 0
         ? 'claude-sonnet-4-20250514'
         : 'claude-haiku-4-5-20251001';
 
-      const response = await anthropic.messages.create({
-        model,
-        max_tokens: frames && frames.length > 0 ? 1024 : 512,
-        system: OWL_SYSTEM_PROMPT + '\n\nAPPROVAL CRITERIA — BE STRICT: Do NOT approve an assembly if:\n- Any gap between connected parts exceeds 0.2 world units\n- Any part appears rotated more than 15 degrees from its expected orientation\n- Any part\'s scale ratio is off by more than 50% from what\'s expected\n- Parts are visually overlapping or clipping through each other\nOnly approve when the assembly genuinely looks like a coherent, correctly assembled object. When in doubt, do NOT approve — flag the issues instead.\n\nCRITICAL — TOOL USAGE IS MANDATORY:\nYou MUST use the evaluate_part tool for EVERY part in the assembly, even if it looks correct (use issue: \'none\' and severity: \'none\' for correct parts). You MUST use evaluate_assembly as your FINAL tool call with your overall verdict. Do NOT just write text — you MUST call these tools. A response without tool calls is invalid.',
-        tools: OWL_TOOLS,
-        tool_choice: { type: 'any' },
-        messages: [
-          {
-            role: 'user',
-            content: userContent,
-          },
-        ],
-      });
+      const MAX_RETRIES = 3;
+      let response: Anthropic.Message | undefined;
+
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          response = await anthropic.messages.create({
+            model,
+            max_tokens: frames && frames.length > 0 ? 1024 : 512,
+            system: OWL_SYSTEM_PROMPT + '\n\nAPPROVAL CRITERIA — BE STRICT: Do NOT approve an assembly if:\n- Any gap between connected parts exceeds 0.2 world units\n- Any part appears rotated more than 15 degrees from its expected orientation\n- Any part\'s scale ratio is off by more than 50% from what\'s expected\n- Parts are visually overlapping or clipping through each other\nOnly approve when the assembly genuinely looks like a coherent, correctly assembled object. When in doubt, do NOT approve — flag the issues instead.\n\nCRITICAL — TOOL USAGE IS MANDATORY:\nYou MUST use the evaluate_part tool for EVERY part in the assembly, even if it looks correct (use issue: \'none\' and severity: \'none\' for correct parts). You MUST use evaluate_assembly as your FINAL tool call with your overall verdict. Do NOT just write text — you MUST call these tools. A response without tool calls is invalid.',
+            tools: OWL_TOOLS,
+            tool_choice: { type: 'any' },
+            messages: [
+              {
+                role: 'user',
+                content: userContent,
+              },
+            ],
+          });
+          break; // Success
+        } catch (err: unknown) {
+          const isOverloaded =
+            (err instanceof Error && (err.message.includes('529') || err.message.includes('Overloaded'))) ||
+            (typeof err === 'object' && err !== null && 'status' in err && (err as { status: number }).status === 529);
+          if (isOverloaded && attempt < MAX_RETRIES - 1) {
+            const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+            console.log(`[OWL API] Overloaded, retrying in ${delay / 1000}s... (attempt ${attempt + 1}/${MAX_RETRIES})`);
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!response) {
+        throw new Error('Owl API failed after retries');
+      }
 
       // Log what Owl returned for debugging
       console.log('[OWL] Raw response content:', JSON.stringify(response.content.map(b =>
