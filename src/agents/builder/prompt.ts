@@ -130,6 +130,8 @@ ONLY use create_component when the user specifically asks for:
 MULTI-PART GENERATION (for complex objects via generate_mesh)
 ═══════════════════════════════════════════════════════════════
 
+ALWAYS provide a position for each part that reflects where it belongs in the final assembly. Stack parts vertically (different Y values) for things like rockets, buildings, robots. Space horizontally (different X values) for side-by-side arrangements like cars with wheels. The Mechanic will fine-tune positions, but your initial layout must be semantically correct. NEVER leave position as {0,0,0} for decomposed parts.
+
 DECISION RULE — WHEN TO DECOMPOSE (BE AGGRESSIVE!):
 
 ▶ 1 PART (single generate_mesh): ONLY for truly simple single-piece objects with NO distinct structural sections:
@@ -186,12 +188,12 @@ Think: "What are the structural sections of ONE rocket?"
 → Nose cone (top), Fuselage body (middle), Fin set (bottom sides), Engine nozzle (bottom center)
 
 NOTE: See "ROCKET SHIP — USE THESE EXACT PROMPTS" section below for the CACHED prompts to use.
-Parts are automatically placed in a staging line with clear separation. The auto-connect system will then snap them into their final assembly positions.
+Parts are placed at their semantic positions (different Y values for vertical stacking). The Mechanic will fine-tune positions if needed.
 
-  generate_mesh({ prompt: "conical rocket nose cone, white metallic, pointed tip", title: "Nose Cone" })
-  generate_mesh({ prompt: "cylindrical rocket fuselage, white with panel lines, open ends", title: "Fuselage" })
-  generate_mesh({ prompt: "set of four triangular rocket fins, red metallic, radial arrangement", title: "Fins" })
-  generate_mesh({ prompt: "rocket engine bell nozzle, dark metallic with heat discoloration", title: "Engine" })
+  generate_mesh({ prompt: "conical rocket nose cone, white metallic, pointed tip", title: "Nose Cone", position: {x:0, y:4, z:0} })
+  generate_mesh({ prompt: "cylindrical rocket fuselage, white with panel lines, open ends", title: "Fuselage", position: {x:0, y:2, z:0} })
+  generate_mesh({ prompt: "set of four triangular rocket fins, red metallic, radial arrangement", title: "Fins", position: {x:0, y:0.5, z:0} })
+  generate_mesh({ prompt: "rocket engine bell nozzle, dark metallic with heat discoloration", title: "Engine", position: {x:0, y:-1, z:0} })
   group_nodes: nodeIds=[noseCone, fuselage, fins, engine], label="Rocket"
   respond_verbally: "Built your rocket — nose cone, fuselage, fins, and engine."
 
@@ -253,24 +255,28 @@ When the user says "build a rocket", "build a rocketship", "build a rocket ship"
 
   generate_mesh({
     prompt: "conical rocket nose cone, white metallic, pointed tip",
-    title: "Nose Cone"
+    title: "Nose Cone",
+    position: {x:0, y:4, z:0}
   })
   generate_mesh({
     prompt: "cylindrical rocket fuselage, white with panel lines, open ends",
-    title: "Fuselage"
+    title: "Fuselage",
+    position: {x:0, y:2, z:0}
   })
   generate_mesh({
     prompt: "set of four triangular rocket fins, red metallic, radial arrangement",
-    title: "Fins"
+    title: "Fins",
+    position: {x:0, y:0.5, z:0}
   })
   generate_mesh({
     prompt: "rocket engine bell nozzle, dark metallic with heat discoloration",
-    title: "Engine"
+    title: "Engine",
+    position: {x:0, y:-1, z:0}
   })
   group_nodes: nodeIds=[noseCone, fuselage, fins, engine], label="Rocket"
   respond_verbally: "Built your rocket with nose cone, fuselage, fins, and engine."
 
-IMPORTANT: Copy these prompts CHARACTER FOR CHARACTER. Even small changes like "white metallic" vs "metallic white" will cause a cache miss and waste API credits. Parts are automatically placed in a staging line, then the auto-connect system snaps them into assembly.
+IMPORTANT: Copy these prompts CHARACTER FOR CHARACTER. Even small changes like "white metallic" vs "metallic white" will cause a cache miss and waste API credits. Include the position values to place parts in their semantic locations.
 
 ═══════════════════════════════════════════════════════════════
 DECOMPOSITION ANTI-PATTERNS — NEVER DO THESE

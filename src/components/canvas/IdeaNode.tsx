@@ -115,10 +115,11 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
   const maxDimension = Math.max(size.x, size.y, size.z);
   const scale = maxDimension > 0 ? TARGET_MESH_SIZE / maxDimension : 1;
 
-  // Center the scene
+  // Center the scene and reset rotation so parent group rotation works correctly
   const center = new THREE.Vector3();
   box.getCenter(center);
   scene.position.sub(center.multiplyScalar(scale));
+  scene.rotation.set(0, 0, 0); // Reset any baked-in rotation from the GLB
 
   console.log(`[MESH] Loaded: ${totalTriangles.toLocaleString()} triangles, ${meshCount} meshes, ${textureCount} textures, scale: ${scale.toFixed(3)}`);
 
@@ -377,12 +378,14 @@ export function IdeaNode({ node }: IdeaNodeProps) {
   // Compute rotation from metadata (degrees to radians)
   const nodeRotation = useMemo(() => {
     const rot = (node.metadata?.rotation as Vec3) || { x: 0, y: 0, z: 0 };
-    return [
+    const result = [
       (rot.x * Math.PI) / 180,
       (rot.y * Math.PI) / 180,
       (rot.z * Math.PI) / 180,
     ] as [number, number, number];
-  }, [node.metadata?.rotation]);
+    console.log(`[IdeaNode] ${node.id} nodeRotation:`, { metadataRotation: node.metadata?.rotation, rot, radians: result });
+    return result;
+  }, [node.metadata?.rotation, node.id]);
 
   // Compute scale from node.scale or metadata.uniformScale
   const nodeScale = useMemo(() => {

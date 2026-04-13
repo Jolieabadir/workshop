@@ -2,7 +2,7 @@
 // Workshop — Builder Action Parser
 // ============================================================
 
-import type { BuilderAction, CanvasState, NodeType, NodeShape, Vec3, IntentType, HandGesture, ComponentType } from '@/core/types';
+import type { BuilderAction, CanvasState, CanvasNode, NodeType, NodeShape, Vec3, IntentType, HandGesture, ComponentType } from '@/core/types';
 
 /** Structured intent from Input Manager */
 export interface IntentData {
@@ -280,7 +280,7 @@ export function parseToolCallToAction(toolName: string, toolInput: Record<string
       return {
         type: 'update_node',
         nodeId: toolInput.nodeId as string,
-        changes: toolInput.changes as Partial<{ content: string; title: string; color: string }>,
+        changes: toolInput.changes as Partial<CanvasNode>,
       };
 
     case 'delete_node':

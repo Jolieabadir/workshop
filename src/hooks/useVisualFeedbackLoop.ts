@@ -455,13 +455,10 @@ export function useVisualFeedbackLoop() {
     let lastEval: OwlEvaluation | null = null;
 
     try {
-      // Step 0: Run auto-connection to snap parts together BEFORE evaluation
-      console.log('[FEEDBACK LOOP] Running auto-connection pass...');
-      const autoConnectCount = await runAutoConnect();
-      if (autoConnectCount > 0) {
-        console.log(`[FEEDBACK LOOP] Auto-connected ${autoConnectCount} parts, waiting for render...`);
-        await waitForRender();
-      }
+      // Auto-connect disabled — Builder's semantic positioning + Mechanic corrections
+      // handle assembly better than rule-based snapping
+      // const autoConnectCount = await runAutoConnect();
+      const autoConnectCount = 0;
 
       while (iteration < MAX_ITERATIONS) {
         iteration++;
