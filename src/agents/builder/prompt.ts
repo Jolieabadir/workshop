@@ -132,6 +132,15 @@ MULTI-PART GENERATION (for complex objects via generate_mesh)
 
 ALWAYS provide a position for each part that reflects where it belongs in the final assembly. Stack parts vertically (different Y values) for things like rockets, buildings, robots. Space horizontally (different X values) for side-by-side arrangements like cars with wheels. The Mechanic will fine-tune positions, but your initial layout must be semantically correct. NEVER leave position as {0,0,0} for decomposed parts.
 
+MESH PROMPT ENGINEERING FOR TRIPO:
+- Always include "3D" and "solid" or "volumetric" in mesh prompts to avoid flat disc generations
+- Include a viewing angle like "side view" or "front view" — without this, Tripo often generates flat top-down views
+- Avoid "set of" or "arrangement of multiple" — generate ONE instance per mesh, the spatial system handles duplication and positioning
+- Simple geometric descriptions work better than complex scene descriptions
+- Describe the SHAPE explicitly: "cylindrical", "conical", "bell shaped", "flat blade" — don't assume Tripo knows what a "rocket fin" looks like in 3D
+- BAD: "set of four triangular rocket fins, radial arrangement" (Tripo generates a flat pinwheel)
+- GOOD: "single triangular rocket fin, red metallic, flat blade shape, side profile view, 3D solid"
+
 DECISION RULE — WHEN TO DECOMPOSE (BE AGGRESSIVE!):
 
 ▶ 1 PART (single generate_mesh): ONLY for truly simple single-piece objects with NO distinct structural sections:
@@ -192,8 +201,8 @@ Parts are placed at their semantic positions (different Y values for vertical st
 
   generate_mesh({ prompt: "conical rocket nose cone, white metallic, pointed tip", title: "Nose Cone", position: {x:0, y:4, z:0} })
   generate_mesh({ prompt: "cylindrical rocket fuselage, white with panel lines, open ends", title: "Fuselage", position: {x:0, y:2, z:0} })
-  generate_mesh({ prompt: "set of four triangular rocket fins, red metallic, radial arrangement", title: "Fins", position: {x:0, y:0.5, z:0} })
-  generate_mesh({ prompt: "rocket engine bell nozzle, dark metallic with heat discoloration", title: "Engine", position: {x:0, y:-1, z:0} })
+  generate_mesh({ prompt: "single triangular rocket fin, red metallic, flat blade shape, side profile view, 3D solid", title: "Fins", position: {x:0, y:0.5, z:0} })
+  generate_mesh({ prompt: "3D rocket engine nozzle bell shape, cylindrical with flared opening, dark metallic, side view, solid volumetric form", title: "Engine", position: {x:0, y:-1, z:0} })
   group_nodes: nodeIds=[noseCone, fuselage, fins, engine], label="Rocket"
   respond_verbally: "Built your rocket — nose cone, fuselage, fins, and engine."
 
@@ -264,12 +273,12 @@ When the user says "build a rocket", "build a rocketship", "build a rocket ship"
     position: {x:0, y:2, z:0}
   })
   generate_mesh({
-    prompt: "set of four triangular rocket fins, red metallic, radial arrangement",
+    prompt: "single triangular rocket fin, red metallic, flat blade shape, side profile view, 3D solid",
     title: "Fins",
     position: {x:0, y:0.5, z:0}
   })
   generate_mesh({
-    prompt: "rocket engine bell nozzle, dark metallic with heat discoloration",
+    prompt: "3D rocket engine nozzle bell shape, cylindrical with flared opening, dark metallic, side view, solid volumetric form",
     title: "Engine",
     position: {x:0, y:-1, z:0}
   })
