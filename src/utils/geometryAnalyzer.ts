@@ -88,7 +88,7 @@ export interface AutoConnection {
     toFace: 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back';
   };
   connectionType: 'vertical' | 'horizontal' | 'radial';
-  role: 'anchor' | 'top' | 'bottom' | 'side';
+  role: 'anchor' | 'top' | 'bottom' | 'side' | 'unknown';
 }
 
 // ============================================================
@@ -662,16 +662,22 @@ function findBestFacePair(
     'top', 'bottom', 'left', 'right', 'front', 'back',
   ];
 
-  let bestPair = {
-    fromFace: 'top' as const,
-    toFace: 'bottom' as const,
+  type FaceType = 'top' | 'bottom' | 'left' | 'right' | 'front' | 'back';
+  let bestPair: {
+    fromFace: FaceType;
+    toFace: FaceType;
+    distance: number;
+    gapVector: Vec3;
+  } = {
+    fromFace: 'top',
+    toFace: 'bottom',
     distance: Infinity,
     gapVector: { x: 0, y: 0, z: 0 },
   };
 
   // Check all opposing face pairs
   for (const faceA of faces) {
-    const opposingFace = OPPOSING_FACES[faceA] as typeof faceA;
+    const opposingFace = OPPOSING_FACES[faceA] as FaceType;
     const { distance, gapVector } = facePairDistance(bboxA, faceA, bboxB, opposingFace);
 
     if (distance < bestPair.distance) {
@@ -811,6 +817,28 @@ export function computeAutoConnections(
     return [];
   }
 
+  // Detect and fix outlier bounding boxes (e.g., engine reading as 40×40×2 instead of ~2)
+  if (parts.length >= 2) {
+    const volumes = parts.map(p => p.volume);
+    const sortedVolumes = [...volumes].sort((a, b) => a - b);
+    const medianVolume = sortedVolumes[Math.floor(sortedVolumes.length / 2)];
+    const maxReasonableVolume = medianVolume * 50; // Allow 50x variance
+
+    for (const part of parts) {
+      if (part.volume > maxReasonableVolume && part.role !== 'anchor') {
+        console.warn(`[AUTO-CONNECT] Part "${part.title}" has outlier volume ${part.volume.toFixed(2)} (median: ${medianVolume.toFixed(2)}). Using center-only positioning.`);
+        // Shrink the bounding box to a reasonable size centered on the part's center
+        const reasonableSize = Math.cbrt(medianVolume);
+        part.size = { x: reasonableSize, y: reasonableSize, z: reasonableSize };
+        part.bbox = {
+          min: { x: part.center.x - reasonableSize/2, y: part.center.y - reasonableSize/2, z: part.center.z - reasonableSize/2 },
+          max: { x: part.center.x + reasonableSize/2, y: part.center.y + reasonableSize/2, z: part.center.z + reasonableSize/2 },
+        };
+        part.volume = medianVolume;
+      }
+    }
+  }
+
   // Find the anchor part (by name first, then by largest volume)
   let anchorPart = parts.find((p) => p.role === 'anchor');
   if (!anchorPart) {
@@ -839,6 +867,8 @@ export function computeAutoConnections(
   const anchorBottomY = anchorPart.bbox.min.y;
   const anchorCenterX = anchorPart.center.x;
   const anchorCenterZ = anchorPart.center.z;
+
+  console.log(`[AUTO-CONNECT] Anchor bbox: top=${anchorTopY.toFixed(2)}, bottom=${anchorBottomY.toFixed(2)}, height=${anchorHeight.toFixed(2)}`);
 
   // Guard against NaN anchor values
   if (!Number.isFinite(anchorTopY) || !Number.isFinite(anchorBottomY) ||
