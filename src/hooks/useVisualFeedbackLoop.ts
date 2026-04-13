@@ -247,7 +247,14 @@ export function useVisualFeedbackLoop() {
         return null;
       }
 
-      return await response.json();
+      const result = await response.json();
+      // Validate response shape — API errors may return unexpected format
+      if (!result || typeof result !== 'object') return null;
+      if (result.error) {
+        console.error('[FEEDBACK LOOP] Owl returned error:', result.error);
+        return null;
+      }
+      return result;
     } catch (error) {
       console.error('[FEEDBACK LOOP] Owl evaluation error:', error);
       return null;
@@ -262,7 +269,8 @@ export function useVisualFeedbackLoop() {
     if (evaluation.assemblyVerdict) {
       return evaluation.assemblyVerdict.verdict === 'APPROVED';
     }
-    // Fallback: no critical issues
+    // Fallback: no critical issues (with null safety)
+    if (!evaluation.partEvaluations) return false;
     const criticalIssues = evaluation.partEvaluations.filter(
       (p) => p.severity === 'critical'
     );
