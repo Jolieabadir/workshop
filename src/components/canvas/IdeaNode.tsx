@@ -83,6 +83,31 @@ function optimizeAndScaleScene(scene: THREE.Object3D): { scene: THREE.Object3D; 
     }
   });
 
+  // Remove invisible objects and non-mesh helpers that inflate bounding box
+  const toRemove: THREE.Object3D[] = [];
+  scene.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      // Remove meshes with zero or near-zero opacity (invisible ground planes)
+      const mat = child.material as THREE.Material;
+      if (mat && 'opacity' in mat && (mat as THREE.MeshStandardMaterial).opacity < 0.1) {
+        toRemove.push(child);
+      }
+      // Remove extremely large flat meshes (ground planes) — aspect ratio > 15:1
+      const geo = child.geometry;
+      if (geo && geo.attributes.position) {
+        const bbox = new THREE.Box3().setFromBufferAttribute(geo.attributes.position as THREE.BufferAttribute);
+        const geoSize = new THREE.Vector3();
+        bbox.getSize(geoSize);
+        const sorted = [geoSize.x, geoSize.y, geoSize.z].sort((a, b) => b - a);
+        if (sorted[0] > 0 && sorted[2] > 0 && sorted[0] / sorted[2] > 15) {
+          console.log(`[MESH] Removing flat geometry (aspect ratio ${(sorted[0] / sorted[2]).toFixed(1)}:1)`);
+          toRemove.push(child);
+        }
+      }
+    }
+  });
+  toRemove.forEach((obj) => obj.parent?.remove(obj));
+
   // Compute bounding box and scale to fit target size
   const box = new THREE.Box3().setFromObject(scene);
   const size = new THREE.Vector3();
