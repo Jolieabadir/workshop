@@ -508,7 +508,7 @@ export function useVisualFeedbackLoop() {
         // Step 4: Check if approved
         const approved = isApproved(owlEvaluation);
         const issueCount = owlEvaluation.assemblyVerdict?.issueCount ??
-          owlEvaluation.partEvaluations.filter((p) => p.issue !== 'none').length;
+          (owlEvaluation.partEvaluations?.filter((p) => p.issue !== 'none').length ?? 0);
 
         if (approved) {
           console.log(`[FEEDBACK LOOP] Owl: APPROVED — assembly looks correct after ${iteration} iteration(s)`);
