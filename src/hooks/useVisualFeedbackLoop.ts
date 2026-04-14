@@ -17,6 +17,90 @@ import type { BuilderAction, CanvasState } from '@/core/types';
 const MAX_ITERATIONS = 5;
 const RENDER_SETTLE_MS = 500;
 
+/** Correction record for history tracking */
+interface CorrectionRecord {
+  iteration: number;
+  nodeId: string;
+  nodeTitle: string;
+  action: string;
+  details: string;
+}
+
+/**
+ * Format CV rotation estimates as explicit instructions for the Mechanic.
+ * CV provides orientationDeg which represents estimated rotation needed.
+ */
+function formatCVRotationEstimates(cvMetrics: CVMetrics | null, nodes: Record<string, { title?: string; content: string }>): string {
+  if (!cvMetrics?.parts || cvMetrics.parts.length === 0) {
+    return '';
+  }
+
+  const rotationEstimates: string[] = [];
+
+  for (const part of cvMetrics.parts) {
+    if (part.orientationDeg !== undefined && Math.abs(part.orientationDeg) > 10) {
+      // Calculate confidence based on how clear the orientation signal is
+      const confidence = Math.min(0.9, 0.5 + Math.abs(part.orientationDeg) / 180);
+      const node = nodes[part.nodeId];
+      const partName = node?.title || node?.content?.slice(0, 20) || part.nodeId;
+
+      // Determine rotation axis based on bounding box aspect ratio
+      const aspectRatio = part.boundingBox.width / part.boundingBox.height;
+      let reason = '';
+      let axis = 'Z';
+
+      if (aspectRatio > 1.5) {
+        reason = 'elongated horizontally in view';
+        axis = 'Z';
+      } else if (aspectRatio < 0.67) {
+        reason = 'elongated vertically (may be correct)';
+        axis = 'Z';
+      } else {
+        reason = 'orientation unclear from aspect ratio';
+      }
+
+      rotationEstimates.push(
+        `- ${partName}: rotate ${axis}=${Math.round(part.orientationDeg)}° (confidence: ${confidence.toFixed(1)}, reason: ${reason})`
+      );
+    }
+  }
+
+  if (rotationEstimates.length === 0) {
+    return '';
+  }
+
+  return `
+## CV ROTATION ESTIMATES (apply directly if confidence > 0.7)
+${rotationEstimates.join('\n')}
+`;
+}
+
+/**
+ * Format correction history for the Mechanic to avoid repeating the same fixes.
+ */
+function formatCorrectionHistory(history: CorrectionRecord[]): string {
+  if (history.length === 0) {
+    return '';
+  }
+
+  const byIteration = new Map<number, CorrectionRecord[]>();
+  for (const record of history) {
+    const list = byIteration.get(record.iteration) || [];
+    list.push(record);
+    byIteration.set(record.iteration, list);
+  }
+
+  const lines: string[] = ['## CORRECTIONS ALREADY APPLIED THIS LOOP'];
+  for (const [iteration, records] of byIteration) {
+    const actions = records.map(r => `${r.action} ${r.nodeTitle} ${r.details}`).join(', ');
+    lines.push(`- Iteration ${iteration}: ${actions}`);
+  }
+  lines.push('');
+  lines.push('DO NOT repeat these corrections. Build on previous work or try different approaches.');
+
+  return lines.join('\n');
+}
+
 /** Part evaluation from Owl */
 interface PartEvaluation {
   nodeId: string;
@@ -288,11 +372,18 @@ export function useVisualFeedbackLoop() {
     frames: string[],
     cvMetrics: CVMetrics | null,
     canvasState: CanvasState,
-    geometryAnalysis: GeometryAnalysis | null
+    geometryAnalysis: GeometryAnalysis | null,
+    correctionHistory: CorrectionRecord[]
   ): Promise<BuilderAction[]> => {
     try {
       // Format geometry for prompt if available
       const geometryContext = geometryAnalysis ? formatGeometryForPrompt(geometryAnalysis) : null;
+
+      // Format CV rotation estimates as explicit instructions
+      const cvRotationEstimates = formatCVRotationEstimates(cvMetrics, canvasState.nodes);
+
+      // Format correction history to prevent repeating the same fixes
+      const correctionHistoryContext = formatCorrectionHistory(correctionHistory);
 
       const response = await fetch('/api/agents/mechanic', {
         method: 'POST',
@@ -303,6 +394,8 @@ export function useVisualFeedbackLoop() {
           cvMetrics,
           canvasState,
           geometryContext, // Exact 3D measurements
+          cvRotationEstimates, // Formatted CV rotation estimates
+          correctionHistoryContext, // Previous corrections in this loop
         }),
       });
 
@@ -458,7 +551,10 @@ export function useVisualFeedbackLoop() {
     let lastEval: OwlEvaluation | null = null;
 
     // Track corrections to detect loops (same correction repeated = mesh is unfixable)
-    const correctionHistory = new Map<string, string[]>(); // nodeId -> array of correction signatures
+    const correctionSignatures = new Map<string, string[]>(); // nodeId -> array of correction signatures
+
+    // Track all corrections for history context
+    const correctionHistory: CorrectionRecord[] = [];
 
     try {
       // Auto-connect disabled — Builder's semantic positioning + Mechanic corrections
@@ -529,7 +625,8 @@ export function useVisualFeedbackLoop() {
           frameImages,
           cvMetrics,
           canvasState,
-          geometryAnalysis
+          geometryAnalysis,
+          correctionHistory
         );
 
         // Filter out respond_verbally from correction count
@@ -543,6 +640,7 @@ export function useVisualFeedbackLoop() {
 
         // Step 6: Filter out duplicate corrections to prevent loops
         const filteredCorrections: BuilderAction[] = [];
+        const nodes = canvasState.nodes;
         for (const action of corrections) {
           // Detect correction loops
           const changes = 'changes' in action ? action.changes as Record<string, unknown> : undefined;
@@ -555,13 +653,44 @@ export function useVisualFeedbackLoop() {
           });
           const nodeId = getNodeIdFromAction(action);
           if (nodeId) {
-            const history = correctionHistory.get(nodeId) || [];
-            if (history.includes(corrSig)) {
+            const sigs = correctionSignatures.get(nodeId) || [];
+            if (sigs.includes(corrSig)) {
               console.warn(`[FEEDBACK LOOP] Skipping duplicate correction for ${nodeId}: ${corrSig}`);
               continue; // Skip this correction — it already failed
             }
-            history.push(corrSig);
-            correctionHistory.set(nodeId, history);
+            sigs.push(corrSig);
+            correctionSignatures.set(nodeId, sigs);
+
+            // Add to correction history for context
+            const node = nodes[nodeId];
+            const nodeTitle = node?.title || node?.content?.slice(0, 20) || nodeId;
+            let actionDesc = action.type as string;
+            let details = '';
+
+            if (action.type === 'update_node' && metadata) {
+              if (metadata.rotation) {
+                const rot = metadata.rotation as { x?: number; y?: number; z?: number };
+                actionDesc = 'rotated';
+                details = `X=${rot.x || 0}°, Y=${rot.y || 0}°, Z=${rot.z || 0}°`;
+              } else if (metadata.uniformScale !== undefined) {
+                actionDesc = 'scaled';
+                details = `to ${metadata.uniformScale}`;
+              }
+            } else if (action.type === 'move_node') {
+              actionDesc = 'moved';
+              const pos = (action as { position?: { x: number; y: number; z: number } }).position;
+              if (pos) {
+                details = `to Y=${pos.y.toFixed(1)}`;
+              }
+            }
+
+            correctionHistory.push({
+              iteration,
+              nodeId,
+              nodeTitle,
+              action: actionDesc,
+              details,
+            });
           }
           filteredCorrections.push(action);
         }

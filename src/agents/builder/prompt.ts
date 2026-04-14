@@ -78,6 +78,18 @@ Physical/Mechanical:
 • link — Connecting bar (linkages, arms)
 • joint — Pivot point (hinges, rotation)
 
+Geometric Primitives:
+• cone — Conical shape (nose cones, funnels). radiusTop=0 for pointed, >0 for truncated
+• sphere — Spherical shape (domes, balls, tanks)
+• hemisphere — Half sphere (dome caps, rounded tops)
+• cylinder — Simple cylinder (tubes, columns, barrels)
+• torus — Ring/donut shape (seals, rings)
+• wedge — Triangular prism (ramps, supports)
+• tube — Hollow cylinder (pipes, barrels, tunnels)
+• fin — Tapered flat shape (rocket fins, wings, blades)
+• nozzle — Hollow truncated cone (engine nozzles, funnels, bells)
+• dome — Hemisphere on cylinder base (capsules, tanks, cockpits)
+
 Electronic:
 • resistor, capacitor, ic, led, connector
 
@@ -265,18 +277,18 @@ ROCKET SHIP — USE THESE EXACT COMPONENTS
 
 When the user says "build a rocket", "build a rocketship", "build a rocket ship", "make a rocket", or similar, use EXACTLY these create_component calls. Do not rephrase, add details, or modify them:
 
-  create_component({ componentType: "housing", title: "Nose Cone", params: { width: 30, height: 60, depth: 30, wallThickness: 2, color: "#cccccc" }, position: {x:0, y:0, z:0} })
-  create_component({ componentType: "shaft", title: "Fuselage", params: { length: 100, diameter: 30, type: "smooth", color: "#dddddd" }, position: {x:0, y:0, z:0} })
-  create_component({ componentType: "plate", title: "Fins", params: { width: 40, height: 30, thickness: 3, color: "#cc3333" }, position: {x:0, y:0, z:0} })
-  create_component({ componentType: "housing", title: "Engine", params: { width: 25, height: 35, depth: 25, wallThickness: 2, openFace: "bottom", color: "#555555" }, position: {x:0, y:0, z:0} })
+  create_component({ componentType: "cone", title: "Nose Cone", params: { radiusBottom: 15, radiusTop: 0, height: 40, color: "#cccccc" }, position: {x:0, y:4, z:0} })
+  create_component({ componentType: "cylinder", title: "Fuselage", params: { radius: 15, height: 80, color: "#dddddd" }, position: {x:0, y:0, z:0} })
+  create_component({ componentType: "fin", title: "Fins", params: { rootChord: 20, tipChord: 8, span: 25, thickness: 2, color: "#cc3333" }, position: {x:0, y:-2, z:0} })
+  create_component({ componentType: "nozzle", title: "Engine", params: { radiusTop: 12, radiusBottom: 18, height: 30, color: "#555555" }, position: {x:0, y:-4, z:0} })
 
-  create_connection({ fromId: "Nose Cone", toId: "Fuselage", fromPort: "bottom", toPort: "end1", label: "nose attachment" })
-  create_connection({ fromId: "Fuselage", toId: "Fins", fromPort: "end2", toPort: "top", label: "fin mount" })
-  create_connection({ fromId: "Fuselage", toId: "Engine", fromPort: "end2", toPort: "top", label: "engine mount" })
+  create_connection({ fromId: "Nose Cone", toId: "Fuselage", fromPort: "base", toPort: "top", label: "nose attachment" })
+  create_connection({ fromId: "Fuselage", toId: "Fins", fromPort: "bottom", toPort: "root", label: "fin mount" })
+  create_connection({ fromId: "Fuselage", toId: "Engine", fromPort: "bottom", toPort: "inlet", label: "engine mount" })
   group_nodes({ nodeIds: ["Nose Cone", "Fuselage", "Fins", "Engine"], label: "Rocket" })
   respond_verbally: "Built your rocket with nose cone, fuselage, fins, and engine."
 
-IMPORTANT: Use these exact component types and params. The auto-alignment system will position parts correctly based on the connections. All parts start at {x:0, y:0, z:0} and snap into place when connected.
+IMPORTANT: Use these exact component types and params. Note the vertical position offsets (y:4, y:0, y:-2, y:-4) to stack parts correctly. The auto-alignment system will fine-tune positions based on the connections.
 
 ═══════════════════════════════════════════════════════════════
 DECOMPOSITION ANTI-PATTERNS — NEVER DO THESE
@@ -537,6 +549,16 @@ Quick reference:
 - ic: pin1, pin2, pin3... pinN
 - led: anode, cathode
 - connector: pin1, pin2, pin3... pinN
+- cone: tip, base
+- sphere: top, bottom, front, back, left, right
+- hemisphere: top, base
+- cylinder: top, bottom
+- torus: center
+- wedge: base, back, slope
+- tube: top, bottom
+- fin: root, tip
+- nozzle: inlet, outlet
+- dome: top, base
 
 Example — connecting a housing's bottom to another housing's top:
   create_connection(fromId="fuel_tank", toId="engine_section", fromPort="bottom", toPort="top", label="structural mount")

@@ -41,7 +41,7 @@ Only use move_node AFTER rotation and scale are correct:
 - Close gaps between parts
 - Align connection points
 
-## ROTATION CORRECTIONS — USE GEOMETRY DATA, NOT VISUAL GUESSING
+## ROTATION CORRECTIONS — USE GEOMETRY DATA AND CV ESTIMATES
 
 The geometry context tells you each part's principalAxis (X, Y, or Z — the direction of its longest dimension).
 
@@ -52,7 +52,19 @@ For vertical assemblies (rockets, towers, buildings), all parts should have prin
 
 For horizontal assemblies (cars, trains), parts should have principalAxis=X or Z.
 
-NEVER guess rotation from the 2D screenshots alone. ALWAYS use the principalAxis from the geometry data. The geometry data is exact 3D ground truth — the screenshots are just for visual confirmation.
+## CV ROTATION ESTIMATES — APPLY DIRECTLY WHEN CONFIDENT
+
+When you receive CV ROTATION ESTIMATES with confidence > 0.7, apply them directly instead of guessing from images. The CV system uses multi-view triangulation to estimate 3D rotation from 2D renders — it's more reliable than visual guessing.
+
+Example CV estimate: "Nose Cone: rotate Z=-90° (confidence: 0.8, reason: elongated along X in top view)"
+→ Apply directly: rotate_node({ nodeId: "nose_cone_id", rotation: { z: -90 } })
+
+If CV confidence is < 0.7, use geometry data principalAxis as the primary guide.
+
+NEVER guess rotation from the 2D screenshots alone. ALWAYS use either:
+1. CV rotation estimates (if confidence > 0.7)
+2. Geometry data principalAxis (for axis alignment)
+3. Screenshots only for semantic face orientation (which way a nozzle opening faces)
 
 ## SCALE CORRECTIONS — USE SIZE DATA
 

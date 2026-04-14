@@ -45,8 +45,8 @@ export const BUILDER_TOOLS: Tool[] = [
       properties: {
         componentType: {
           type: 'string',
-          enum: ['resistor', 'capacitor', 'ic', 'led', 'connector', 'plate', 'shaft', 'bearing', 'bracket', 'link', 'joint', 'housing', 'gear'],
-          description: 'Type of component. Electronic: resistor, capacitor, ic (integrated circuit chip), led, connector. Mechanical: housing (box/enclosure with optional open face), plate (flat panel/fin/shield), shaft (cylindrical rod), bearing (ring with inner/outer race), gear (toothed wheel), bracket (L-shaped support), link (connecting bar), joint (pivot point).',
+          enum: ['resistor', 'capacitor', 'ic', 'led', 'connector', 'plate', 'shaft', 'bearing', 'bracket', 'link', 'joint', 'housing', 'gear', 'cone', 'sphere', 'hemisphere', 'cylinder', 'torus', 'wedge', 'tube', 'fin', 'nozzle', 'dome'],
+          description: 'Type of component. Electronic: resistor, capacitor, ic (integrated circuit chip), led, connector. Mechanical: housing (box/enclosure with optional open face), plate (flat panel/fin/shield), shaft (cylindrical rod), bearing (ring with inner/outer race), gear (toothed wheel), bracket (L-shaped support), link (connecting bar), joint (pivot point). Geometric: cone (nose cones, funnels), sphere (balls, tanks), hemisphere (dome caps), cylinder (tubes, columns), torus (rings, seals), wedge (ramps, supports), tube (hollow cylinder/pipe), fin (rocket fins, blades), nozzle (engine nozzles, bells), dome (capsules, tanks).',
         },
         title: {
           type: 'string',
@@ -54,7 +54,7 @@ export const BUILDER_TOOLS: Tool[] = [
         },
         params: {
           type: 'object',
-          description: 'Component-specific parameters in mm. Housing: {width, height, depth, wallThickness, openFace: "none"|"top"|"front"}. Plate: {width, height, thickness, material}. Shaft: {length, diameter, type: "smooth"|"splined"|"threaded"}. Bearing: {outerDiameter, innerDiameter, width}. Gear: {toothCount, module, thickness, boreDiameter}. IC: {pinCount, label}. Connector: {pinCount, rows, type: "header"|"terminal"|"socket"}. LED: {size, color}. Resistor: {length, diameter}. Capacitor: {diameter, height, type: "electrolytic"|"ceramic"}.',
+          description: 'Component-specific parameters in mm. Housing: {width, height, depth, wallThickness, openFace: "none"|"top"|"front"}. Plate: {width, height, thickness, material}. Shaft: {length, diameter, type: "smooth"|"splined"|"threaded"}. Bearing: {outerDiameter, innerDiameter, width}. Gear: {toothCount, module, thickness, boreDiameter}. IC: {pinCount, label}. Connector: {pinCount, rows, type: "header"|"terminal"|"socket"}. LED: {size, color}. Resistor: {length, diameter}. Capacitor: {diameter, height, type: "electrolytic"|"ceramic"}. Cone: {radiusBottom, radiusTop (0=pointed), height}. Sphere: {radius}. Hemisphere: {radius}. Cylinder: {radius, height}. Torus: {radius, tubeRadius}. Wedge: {width, height, depth}. Tube: {radius, height, wallThickness}. Fin: {rootChord, tipChord, span, thickness, sweepAngle}. Nozzle: {radiusTop, radiusBottom, height, wallThickness}. Dome: {radius, cylinderHeight}.',
         },
         position: {
           type: 'object',

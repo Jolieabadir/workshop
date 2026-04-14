@@ -39,7 +39,18 @@ export type ComponentType =
   | 'link'
   | 'joint'
   | 'housing'
-  | 'gear';
+  | 'gear'
+  // Geometric primitives
+  | 'cone'
+  | 'sphere'
+  | 'hemisphere'
+  | 'cylinder'
+  | 'torus'
+  | 'wedge'
+  | 'tube'
+  | 'fin'
+  | 'nozzle'
+  | 'dome';
 
 /** Connector point on an electronic component (where wires attach) */
 export interface ComponentConnectorPoint {

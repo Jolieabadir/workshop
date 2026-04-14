@@ -13,6 +13,16 @@ import { Link, LinkParams } from './Link';
 import { Joint, JointParams } from './Joint';
 import { Housing, HousingParams } from './Housing';
 import { Gear, GearParams } from './Gear';
+import { Cone, ConeParams } from './Cone';
+import { Sphere, SphereParams } from './Sphere';
+import { Hemisphere, HemisphereParams } from './Hemisphere';
+import { Cylinder, CylinderParams } from './Cylinder';
+import { Torus, TorusParams } from './Torus';
+import { Wedge, WedgeParams } from './Wedge';
+import { Tube, TubeParams } from './Tube';
+import { Fin, FinParams } from './Fin';
+import { Nozzle, NozzleParams } from './Nozzle';
+import { Dome, DomeParams } from './Dome';
 
 export type ComponentType =
   // Electronic components
@@ -29,7 +39,18 @@ export type ComponentType =
   | 'link'
   | 'joint'
   | 'housing'
-  | 'gear';
+  | 'gear'
+  // Geometric primitives
+  | 'cone'
+  | 'sphere'
+  | 'hemisphere'
+  | 'cylinder'
+  | 'torus'
+  | 'wedge'
+  | 'tube'
+  | 'fin'
+  | 'nozzle'
+  | 'dome';
 
 export interface ComponentGeneratorProps {
   componentType: ComponentType;
@@ -108,6 +129,47 @@ export function ComponentGenerator({ componentType, params = {}, scale = 1, colo
 
     case 'gear':
       component = <Gear params={params as GearParams} scale={scale} color={color} />;
+      break;
+
+    // Geometric primitives
+    case 'cone':
+      component = <Cone params={params as ConeParams} scale={scale} color={color} />;
+      break;
+
+    case 'sphere':
+      component = <Sphere params={params as SphereParams} scale={scale} color={color} />;
+      break;
+
+    case 'hemisphere':
+      component = <Hemisphere params={params as HemisphereParams} scale={scale} color={color} />;
+      break;
+
+    case 'cylinder':
+      component = <Cylinder params={params as CylinderParams} scale={scale} color={color} />;
+      break;
+
+    case 'torus':
+      component = <Torus params={params as TorusParams} scale={scale} color={color} />;
+      break;
+
+    case 'wedge':
+      component = <Wedge params={params as WedgeParams} scale={scale} color={color} />;
+      break;
+
+    case 'tube':
+      component = <Tube params={params as TubeParams} scale={scale} color={color} />;
+      break;
+
+    case 'fin':
+      component = <Fin params={params as FinParams} scale={scale} color={color} />;
+      break;
+
+    case 'nozzle':
+      component = <Nozzle params={params as NozzleParams} scale={scale} color={color} />;
+      break;
+
+    case 'dome':
+      component = <Dome params={params as DomeParams} scale={scale} color={color} />;
       break;
 
     default:

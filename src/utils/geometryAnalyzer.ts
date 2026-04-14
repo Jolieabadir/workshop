@@ -343,6 +343,135 @@ export function analyzeGeometry(
   const partBboxes: Map<string, { min: Vec3; max: Vec3; center: Vec3; size: Vec3 }> = new Map();
 
   for (const node of nodeList) {
+    // PRIORITY 1: Parametric components — compute bounding box FROM PARAMS directly
+    // This bypasses scene graph timing issues entirely for known geometry
+    if (node.component && !node.meshUrl) {
+      const COMPONENT_SCALE = 10;
+      const params = node.component.params as Record<string, number>;
+      const componentType = node.component.componentType;
+
+      // Compute size based on component type and params
+      // Each component type has predictable geometry
+      let size: Vec3;
+
+      switch (componentType) {
+        case 'cone':
+        case 'nozzle': {
+          const radiusBottom = (params.radiusBottom ?? 20) * COMPONENT_SCALE / 100;
+          const radiusTop = (params.radiusTop ?? 0) * COMPONENT_SCALE / 100;
+          const height = (params.height ?? 40) * COMPONENT_SCALE / 100;
+          const maxRadius = Math.max(radiusBottom, radiusTop);
+          size = { x: maxRadius * 2, y: height, z: maxRadius * 2 };
+          break;
+        }
+        case 'sphere': {
+          const radius = (params.radius ?? 20) * COMPONENT_SCALE / 100;
+          size = { x: radius * 2, y: radius * 2, z: radius * 2 };
+          break;
+        }
+        case 'hemisphere': {
+          const radius = (params.radius ?? 20) * COMPONENT_SCALE / 100;
+          size = { x: radius * 2, y: radius, z: radius * 2 };
+          break;
+        }
+        case 'cylinder':
+        case 'tube': {
+          const radius = (params.radius ?? 15) * COMPONENT_SCALE / 100;
+          const height = (params.height ?? 40) * COMPONENT_SCALE / 100;
+          size = { x: radius * 2, y: height, z: radius * 2 };
+          break;
+        }
+        case 'torus': {
+          const radius = (params.radius ?? 20) * COMPONENT_SCALE / 100;
+          const tubeRadius = (params.tubeRadius ?? 5) * COMPONENT_SCALE / 100;
+          const totalRadius = radius + tubeRadius;
+          size = { x: totalRadius * 2, y: tubeRadius * 2, z: totalRadius * 2 };
+          break;
+        }
+        case 'fin': {
+          const rootChord = (params.rootChord ?? 30) * COMPONENT_SCALE / 100;
+          const span = (params.span ?? 40) * COMPONENT_SCALE / 100;
+          const thickness = (params.thickness ?? 3) * COMPONENT_SCALE / 100;
+          size = { x: rootChord, y: span, z: thickness };
+          break;
+        }
+        case 'dome': {
+          const radius = (params.radius ?? 20) * COMPONENT_SCALE / 100;
+          const cylinderHeight = (params.cylinderHeight ?? 10) * COMPONENT_SCALE / 100;
+          size = { x: radius * 2, y: cylinderHeight + radius, z: radius * 2 };
+          break;
+        }
+        case 'wedge': {
+          const width = (params.width ?? 30) * COMPONENT_SCALE / 100;
+          const height = (params.height ?? 20) * COMPONENT_SCALE / 100;
+          const depth = (params.depth ?? 40) * COMPONENT_SCALE / 100;
+          size = { x: width, y: height, z: depth };
+          break;
+        }
+        case 'shaft': {
+          const length = (params.length ?? 30) * COMPONENT_SCALE / 100;
+          const diameter = (params.diameter ?? 5) * COMPONENT_SCALE / 100;
+          size = { x: length, y: diameter, z: diameter };
+          break;
+        }
+        case 'housing':
+        case 'plate':
+        default: {
+          // Generic box-like components
+          const width = (params.width || params.diameter || params.length || 20) * COMPONENT_SCALE / 100;
+          const height = (params.height || params.length || params.diameter || 20) * COMPONENT_SCALE / 100;
+          const depth = (params.depth || params.diameter || params.width || 20) * COMPONENT_SCALE / 100;
+          size = { x: width, y: height, z: depth };
+          break;
+        }
+      }
+
+      // Determine principal axis from computed size
+      let principalAxis: 'X' | 'Y' | 'Z' = 'Y';
+      if (size.x >= size.y && size.x >= size.z) principalAxis = 'X';
+      else if (size.y >= size.x && size.y >= size.z) principalAxis = 'Y';
+      else principalAxis = 'Z';
+
+      const halfSize = { x: size.x / 2, y: size.y / 2, z: size.z / 2 };
+      const volume = size.x * size.y * size.z;
+
+      // Read rotation and scale from node.metadata if available
+      const metadataRotation = node.metadata?.rotation as Vec3 | undefined;
+      const metadataScale = node.metadata?.uniformScale as number | undefined;
+      const nodeRotation: Vec3 = metadataRotation
+        ? { x: metadataRotation.x, y: metadataRotation.y, z: metadataRotation.z }
+        : { x: 0, y: 0, z: 0 };
+      const uniformScale = metadataScale ?? 1;
+      const nodeScale: Vec3 = { x: uniformScale, y: uniformScale, z: uniformScale };
+
+      parts.push({
+        nodeId: node.id,
+        title: node.title || node.content.slice(0, 30),
+        center: node.position,
+        size,
+        volume,
+        worldBbox: {
+          min: { x: node.position.x - halfSize.x, y: node.position.y - halfSize.y, z: node.position.z - halfSize.z },
+          max: { x: node.position.x + halfSize.x, y: node.position.y + halfSize.y, z: node.position.z + halfSize.z },
+        },
+        worldPosition: node.position,
+        worldRotation: nodeRotation,
+        worldScale: nodeScale,
+        meshFound: true, // Parametric components always have known geometry
+        principalAxis,
+      });
+
+      partBboxes.set(node.id, {
+        min: { x: node.position.x - halfSize.x, y: node.position.y - halfSize.y, z: node.position.z - halfSize.z },
+        max: { x: node.position.x + halfSize.x, y: node.position.y + halfSize.y, z: node.position.z + halfSize.z },
+        center: node.position,
+        size,
+      });
+
+      continue; // Skip scene graph lookup for parametric components
+    }
+
+    // PRIORITY 2: Try to find mesh in scene graph (for mesh nodes)
     const mesh = findMeshForNode(scene, node.id);
 
     if (mesh) {
@@ -378,38 +507,20 @@ export function analyzeGeometry(
         size: bboxMetrics.size,
       });
     } else {
-      // Mesh not found in scene graph (still loading or component node)
-      let size: Vec3;
-      let principalAxis: 'X' | 'Y' | 'Z' = 'Y';
-      let meshFound = false;
-
-      // Check if this is a component node — compute bounding box from params
-      if (node.component && !node.meshUrl) {
-        const COMPONENT_SCALE = 10;
-        const params = node.component.params as Record<string, number>;
-
-        // Estimate size from params (mm to world units: mm * COMPONENT_SCALE / 100)
-        // A 30mm width at COMPONENT_SCALE=10 → 3.0 world units
-        const width = (params.width || params.diameter || params.length || 20) * COMPONENT_SCALE / 100;
-        const height = (params.height || params.length || params.diameter || 20) * COMPONENT_SCALE / 100;
-        const depth = (params.depth || params.diameter || params.width || 20) * COMPONENT_SCALE / 100;
-
-        size = { x: width, y: height, z: depth };
-
-        // Determine principal axis from computed size
-        if (size.x >= size.y && size.x >= size.z) principalAxis = 'X';
-        else if (size.y >= size.x && size.y >= size.z) principalAxis = 'Y';
-        else principalAxis = 'Z';
-
-        // Component nodes render instantly, so treat as "found" for analysis purposes
-        meshFound = true;
-      } else {
-        // Fallback for non-component nodes without mesh
-        size = { x: 1, y: 1, z: 1 };
-      }
-
+      // PRIORITY 3: Fallback for mesh nodes that haven't loaded yet
+      const size: Vec3 = { x: 1, y: 1, z: 1 };
+      const principalAxis: 'X' | 'Y' | 'Z' = 'Y';
       const halfSize = { x: size.x / 2, y: size.y / 2, z: size.z / 2 };
       const volume = size.x * size.y * size.z;
+
+      // Read rotation and scale from node.metadata if available
+      const metadataRotation = node.metadata?.rotation as Vec3 | undefined;
+      const metadataScale = node.metadata?.uniformScale as number | undefined;
+      const nodeRotation: Vec3 = metadataRotation
+        ? { x: metadataRotation.x, y: metadataRotation.y, z: metadataRotation.z }
+        : { x: 0, y: 0, z: 0 };
+      const uniformScale = metadataScale ?? 1;
+      const nodeScale: Vec3 = { x: uniformScale, y: uniformScale, z: uniformScale };
 
       parts.push({
         nodeId: node.id,
@@ -422,9 +533,9 @@ export function analyzeGeometry(
           max: { x: node.position.x + halfSize.x, y: node.position.y + halfSize.y, z: node.position.z + halfSize.z },
         },
         worldPosition: node.position,
-        worldRotation: { x: 0, y: 0, z: 0 },
-        worldScale: { x: 1, y: 1, z: 1 },
-        meshFound,
+        worldRotation: nodeRotation,
+        worldScale: nodeScale,
+        meshFound: false,
         principalAxis,
       });
 
@@ -550,6 +661,7 @@ export function formatGeometryForPrompt(analysis: GeometryAnalysis): string {
     lines.push(`  Position: (${part.center.x.toFixed(2)}, ${part.center.y.toFixed(2)}, ${part.center.z.toFixed(2)})`);
     lines.push(`  Size: ${part.size.x.toFixed(2)} × ${part.size.y.toFixed(2)} × ${part.size.z.toFixed(2)}, ${axisAnnotation}`);
     lines.push(`  Rotation: (${part.worldRotation.x.toFixed(1)}°, ${part.worldRotation.y.toFixed(1)}°, ${part.worldRotation.z.toFixed(1)}°)`);
+    lines.push(`  Scale: ${part.worldScale.x.toFixed(2)}`);
     if (!part.meshFound) {
       lines.push(`  ⚠️ Mesh not loaded yet — measurements are estimates`);
     }
