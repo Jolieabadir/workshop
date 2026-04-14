@@ -150,6 +150,7 @@ interface FeedbackLoopState {
   maxIterations: number;
   lastEvaluation: OwlEvaluation | null;
   error: string | null;
+  lastUserRequest: string | null;
 }
 
 /**
@@ -165,6 +166,7 @@ export function useVisualFeedbackLoop() {
     maxIterations: MAX_ITERATIONS,
     lastEvaluation: null,
     error: null,
+    lastUserRequest: null,
   });
 
   const isRunningRef = useRef(false);
@@ -312,7 +314,8 @@ export function useVisualFeedbackLoop() {
     frames: string[],
     cvMetrics: CVMetrics | null,
     canvasState: CanvasState,
-    geometryAnalysis: GeometryAnalysis | null
+    geometryAnalysis: GeometryAnalysis | null,
+    userRequest: string | null
   ): Promise<OwlEvaluation | null> => {
     try {
       // Format geometry for prompt if available
@@ -326,6 +329,7 @@ export function useVisualFeedbackLoop() {
           frames,
           cvMetrics,
           geometryContext, // Exact 3D measurements
+          userRequest, // Original user request for semantic evaluation
         }),
       });
 
@@ -524,8 +528,9 @@ export function useVisualFeedbackLoop() {
   /**
    * Run the full visual feedback correction loop.
    * Call this after the Builder finishes an assembly.
+   * @param userRequest - The original user request/transcript for semantic evaluation
    */
-  const triggerVisualFeedbackLoop = useCallback(async (): Promise<{
+  const triggerVisualFeedbackLoop = useCallback(async (userRequest?: string): Promise<{
     success: boolean;
     iterations: number;
     finalEvaluation: OwlEvaluation | null;
@@ -542,7 +547,11 @@ export function useVisualFeedbackLoop() {
       isRunning: true,
       currentIteration: 0,
       error: null,
+      lastUserRequest: userRequest || null,
     }));
+
+    // Store userRequest for use in the loop
+    const requestContext = userRequest || null;
 
     // Activate mechanic avatar at loop start
     setMechanicActive(true);
@@ -596,7 +605,7 @@ export function useVisualFeedbackLoop() {
 
         // Step 3: Get Owl evaluation (uses image strings only)
         const canvasState = getCanvasState();
-        const owlEvaluation = await getOwlEvaluation(frameImages, cvMetrics, canvasState, geometryAnalysis);
+        const owlEvaluation = await getOwlEvaluation(frameImages, cvMetrics, canvasState, geometryAnalysis, requestContext);
 
         if (!owlEvaluation) {
           console.error('[FEEDBACK LOOP] Owl evaluation failed, stopping');

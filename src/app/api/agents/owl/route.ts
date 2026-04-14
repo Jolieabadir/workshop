@@ -34,6 +34,8 @@ interface OwlRequest {
   cvMetrics?: CVMetrics;
   /** Optional: Exact 3D geometry measurements from Three.js scene */
   geometryContext?: string;
+  /** Optional: The original user request/transcript for semantic evaluation */
+  userRequest?: string;
 }
 
 function formatCanvasStateForOwl(state: CanvasState): string {
@@ -122,7 +124,7 @@ function parseOwlToolCalls(content: Anthropic.ContentBlock[]): OwlAnalysisResult
 export async function POST(request: NextRequest) {
   try {
     const body: OwlRequest = await request.json();
-    const { canvasState, recentTranscripts, frames, cvMetrics, geometryContext } = body;
+    const { canvasState, recentTranscripts, frames, cvMetrics, geometryContext, userRequest } = body;
 
     // Skip analysis if canvas is empty
     const nodeCount = Object.keys(canvasState.nodes).length;
@@ -133,7 +135,14 @@ export async function POST(request: NextRequest) {
     const canvasContext = formatCanvasStateForOwl(canvasState);
 
     // Build text content
-    let textContent = canvasContext;
+    let textContent = '';
+
+    // Add user request context first if provided
+    if (userRequest) {
+      textContent += `## User Request\n\nThe user requested: "${userRequest}"\n\nEvaluate whether this assembly looks like what was requested AND whether the spatial arrangement is correct.\n\n---\n\n`;
+    }
+
+    textContent += canvasContext;
     if (recentTranscripts && recentTranscripts.length > 0) {
       textContent += '\n\n---\n\n## Recent Conversation:\n';
       textContent += recentTranscripts.map((t) => `- "${t}"`).join('\n');
