@@ -47,6 +47,8 @@ interface MechanicRequest {
   frames: string[]; // base64 PNG images of the rendered scene
   /** Optional: Exact 3D geometry measurements from Three.js scene */
   geometryContext?: string;
+  /** Optional: The original user request/transcript for semantic corrections */
+  userRequest?: string;
 }
 
 function formatCanvasStateForMechanic(state: CanvasState): string {
@@ -136,7 +138,7 @@ function formatCVMetrics(metrics: CVMetrics): string {
 export async function POST(request: NextRequest) {
   try {
     const body: MechanicRequest = await request.json();
-    const { owlEvaluation, cvMetrics, canvasState, frames, geometryContext } = body;
+    const { owlEvaluation, cvMetrics, canvasState, frames, geometryContext, userRequest } = body;
 
     // Skip if no evaluation to process
     if (!owlEvaluation || !owlEvaluation.partEvaluations) {
@@ -178,7 +180,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Build user message with all context
-    let userMessage = `${canvasContext}\n\n${metricsContext}\n\n`;
+    let userMessage = '';
+
+    // Add user request context first if provided
+    if (userRequest) {
+      userMessage += `## User Request\n\nThe user requested: "${userRequest}"\n\nApply corrections that make this assembly match what was requested.\n\n---\n\n`;
+    }
+
+    userMessage += `${canvasContext}\n\n${metricsContext}\n\n`;
 
     // Add exact 3D geometry measurements if provided (truncate if too large)
     if (geometryContext) {

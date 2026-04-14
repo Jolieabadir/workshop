@@ -377,7 +377,8 @@ export function useVisualFeedbackLoop() {
     cvMetrics: CVMetrics | null,
     canvasState: CanvasState,
     geometryAnalysis: GeometryAnalysis | null,
-    correctionHistory: CorrectionRecord[]
+    correctionHistory: CorrectionRecord[],
+    userRequest: string | null
   ): Promise<BuilderAction[]> => {
     try {
       // Format geometry for prompt if available
@@ -400,6 +401,7 @@ export function useVisualFeedbackLoop() {
           geometryContext, // Exact 3D measurements
           cvRotationEstimates, // Formatted CV rotation estimates
           correctionHistoryContext, // Previous corrections in this loop
+          userRequest, // Original user request for semantic corrections
         }),
       });
 
@@ -635,7 +637,8 @@ export function useVisualFeedbackLoop() {
           cvMetrics,
           canvasState,
           geometryAnalysis,
-          correctionHistory
+          correctionHistory,
+          requestContext
         );
 
         // Filter out respond_verbally from correction count
