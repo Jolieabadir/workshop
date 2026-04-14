@@ -378,30 +378,61 @@ export function analyzeGeometry(
         size: bboxMetrics.size,
       });
     } else {
-      // Mesh not found (still loading or not a 3D node)
-      // Use node position as fallback
+      // Mesh not found in scene graph (still loading or component node)
+      let size: Vec3;
+      let principalAxis: 'X' | 'Y' | 'Z' = 'Y';
+      let meshFound = false;
+
+      // Check if this is a component node — compute bounding box from params
+      if (node.component && !node.meshUrl) {
+        const COMPONENT_SCALE = 10;
+        const params = node.component.params as Record<string, number>;
+
+        // Estimate size from params (mm to world units: mm * COMPONENT_SCALE / 100)
+        // A 30mm width at COMPONENT_SCALE=10 → 3.0 world units
+        const width = (params.width || params.diameter || params.length || 20) * COMPONENT_SCALE / 100;
+        const height = (params.height || params.length || params.diameter || 20) * COMPONENT_SCALE / 100;
+        const depth = (params.depth || params.diameter || params.width || 20) * COMPONENT_SCALE / 100;
+
+        size = { x: width, y: height, z: depth };
+
+        // Determine principal axis from computed size
+        if (size.x >= size.y && size.x >= size.z) principalAxis = 'X';
+        else if (size.y >= size.x && size.y >= size.z) principalAxis = 'Y';
+        else principalAxis = 'Z';
+
+        // Component nodes render instantly, so treat as "found" for analysis purposes
+        meshFound = true;
+      } else {
+        // Fallback for non-component nodes without mesh
+        size = { x: 1, y: 1, z: 1 };
+      }
+
+      const halfSize = { x: size.x / 2, y: size.y / 2, z: size.z / 2 };
+      const volume = size.x * size.y * size.z;
+
       parts.push({
         nodeId: node.id,
         title: node.title || node.content.slice(0, 30),
         center: node.position,
-        size: { x: 1, y: 1, z: 1 },
-        volume: 1,
+        size,
+        volume,
         worldBbox: {
-          min: { x: node.position.x - 0.5, y: node.position.y - 0.5, z: node.position.z - 0.5 },
-          max: { x: node.position.x + 0.5, y: node.position.y + 0.5, z: node.position.z + 0.5 },
+          min: { x: node.position.x - halfSize.x, y: node.position.y - halfSize.y, z: node.position.z - halfSize.z },
+          max: { x: node.position.x + halfSize.x, y: node.position.y + halfSize.y, z: node.position.z + halfSize.z },
         },
         worldPosition: node.position,
         worldRotation: { x: 0, y: 0, z: 0 },
         worldScale: { x: 1, y: 1, z: 1 },
-        meshFound: false,
-        principalAxis: 'Y', // Default to vertical for unknown meshes
+        meshFound,
+        principalAxis,
       });
 
       partBboxes.set(node.id, {
-        min: { x: node.position.x - 0.5, y: node.position.y - 0.5, z: node.position.z - 0.5 },
-        max: { x: node.position.x + 0.5, y: node.position.y + 0.5, z: node.position.z + 0.5 },
+        min: { x: node.position.x - halfSize.x, y: node.position.y - halfSize.y, z: node.position.z - halfSize.z },
+        max: { x: node.position.x + halfSize.x, y: node.position.y + halfSize.y, z: node.position.z + halfSize.z },
         center: node.position,
-        size: { x: 1, y: 1, z: 1 },
+        size,
       });
     }
   }
@@ -823,13 +854,56 @@ export function computeAutoConnections(
       });
     } else if (node.meshLoading) {
       console.log(`[AUTO-CONNECT] Skipping "${title}" — mesh still loading`);
+    } else if (node.component && !node.meshUrl) {
+      // Component node without mesh — compute bounding box from params
+      const COMPONENT_SCALE = 10;
+      const params = node.component.params as Record<string, number>;
+
+      // mm to world units: mm * COMPONENT_SCALE / 100
+      const width = (params.width || params.diameter || params.length || 20) * COMPONENT_SCALE / 100;
+      const height = (params.height || params.length || params.diameter || 20) * COMPONENT_SCALE / 100;
+      const depth = (params.depth || params.diameter || params.width || 20) * COMPONENT_SCALE / 100;
+
+      const size = { x: width, y: height, z: depth };
+      const halfSize = { x: width / 2, y: height / 2, z: depth / 2 };
+      const volume = width * height * depth;
+
+      // Determine role from name
+      const normalizedTitle = title.toLowerCase();
+      let role: 'anchor' | 'top' | 'bottom' | 'side' | 'unknown' = 'unknown';
+
+      if (ROLE_PATTERNS.anchor.test(normalizedTitle)) {
+        role = 'anchor';
+      } else if (ROLE_PATTERNS.top.test(normalizedTitle)) {
+        role = 'top';
+      } else if (ROLE_PATTERNS.bottom.test(normalizedTitle)) {
+        role = 'bottom';
+      } else if (ROLE_PATTERNS.side.test(normalizedTitle)) {
+        role = 'side';
+      }
+
+      console.log(`[AUTO-CONNECT] Component "${title}" — role: ${role}, size: ${size.x.toFixed(2)}×${size.y.toFixed(2)}×${size.z.toFixed(2)}`);
+
+      parts.push({
+        nodeId: node.id,
+        title,
+        bbox: {
+          min: { x: node.position.x - halfSize.x, y: node.position.y - halfSize.y, z: node.position.z - halfSize.z },
+          max: { x: node.position.x + halfSize.x, y: node.position.y + halfSize.y, z: node.position.z + halfSize.z },
+        },
+        center: node.position,
+        size,
+        volume,
+        meshFound: true, // Component nodes render instantly
+        role,
+      });
     } else {
       console.log(`[AUTO-CONNECT] Skipping "${title}" — no mesh found`);
     }
   }
 
   if (parts.length < 2) {
-    console.log('[AUTO-CONNECT] Not enough loaded meshes to connect');
+    console.log('[AUTO-CONNECT] Not enough loaded parts to connect');
     return [];
   }
 
@@ -1018,22 +1092,27 @@ export function computeAutoConnections(
 }
 
 /**
- * Check if all mesh nodes have finished loading.
+ * Check if all analyzable nodes have finished loading.
+ * Component nodes render instantly as Three.js primitives.
+ * Mesh nodes need their GLB to be loaded.
  */
 export function allMeshesLoaded(nodes: Record<string, CanvasNode>): boolean {
-  const meshNodes = Object.values(nodes).filter((n) => n.meshUrl || n.meshLoading);
+  return Object.values(nodes).every((node) => {
+    // Component nodes are always "loaded" — they render instantly as primitives
+    if (node.component && !node.meshUrl) return true;
 
-  if (meshNodes.length === 0) return true;
-
-  return meshNodes.every((node) => {
+    // Mesh nodes need their mesh to be loaded
     if (node.meshLoading) return false;
-    if (!node.meshUrl) return true;
 
-    // Check if mesh is actually in the scene
-    const scene = _threeScene;
-    if (!scene) return false;
+    // If node has a meshUrl, check if it's actually in the scene
+    if (node.meshUrl) {
+      const scene = _threeScene;
+      if (!scene) return false;
+      const mesh = findMeshForNode(scene, node.id);
+      return mesh !== null;
+    }
 
-    const mesh = findMeshForNode(scene, node.id);
-    return mesh !== null;
+    // Non-mesh, non-component nodes are considered loaded
+    return true;
   });
 }
