@@ -543,6 +543,53 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   addConnection: (fromId, toId, label, fromPort, toPort) => {
     const id = uid();
+    const state = get();
+    const fromNode = state.nodes[fromId];
+    const toNode = state.nodes[toId];
+
+    // Auto-align: if both ports specified and both nodes have components, snap them together
+    if (fromPort && toPort && fromNode?.component && toNode?.component) {
+      const COMPONENT_SCALE = 10; // Must match ComponentGenerator.tsx
+
+      // Find the connector points
+      const fromConnector = fromNode.component.connectorPoints.find(cp => cp.id === fromPort);
+      const toConnector = toNode.component.connectorPoints.find(cp => cp.id === toPort);
+
+      if (fromConnector && toConnector) {
+        // Compute world positions of each port
+        const fromWorld = {
+          x: fromNode.position.x + fromConnector.position.x * COMPONENT_SCALE,
+          y: fromNode.position.y + fromConnector.position.y * COMPONENT_SCALE,
+          z: fromNode.position.z + fromConnector.position.z * COMPONENT_SCALE,
+        };
+        const toWorld = {
+          x: toNode.position.x + toConnector.position.x * COMPONENT_SCALE,
+          y: toNode.position.y + toConnector.position.y * COMPONENT_SCALE,
+          z: toNode.position.z + toConnector.position.z * COMPONENT_SCALE,
+        };
+
+        // Move toNode so its port aligns with fromNode's port
+        const newPosition = {
+          x: toNode.position.x + (fromWorld.x - toWorld.x),
+          y: toNode.position.y + (fromWorld.y - toWorld.y),
+          z: toNode.position.z + (fromWorld.z - toWorld.z),
+        };
+
+        console.log(`[AUTO-ALIGN] Snapping "${toNode.title}" port ${toPort} to "${fromNode.title}" port ${fromPort}`);
+        console.log(`[AUTO-ALIGN]   From port world: (${fromWorld.x.toFixed(2)}, ${fromWorld.y.toFixed(2)}, ${fromWorld.z.toFixed(2)})`);
+        console.log(`[AUTO-ALIGN]   Moving "${toNode.title}" from (${toNode.position.x.toFixed(2)}, ${toNode.position.y.toFixed(2)}, ${toNode.position.z.toFixed(2)}) to (${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)}, ${newPosition.z.toFixed(2)})`);
+
+        // Update the target node's position
+        set((s) => ({
+          nodes: {
+            ...s.nodes,
+            [toId]: { ...s.nodes[toId], position: newPosition, updatedAt: Date.now() },
+          },
+        }));
+      }
+    }
+
+    // Store the connection
     set((s) => ({
       connections: { ...s.connections, [id]: { id, fromId, toId, fromPort, toPort, label } },
     }));

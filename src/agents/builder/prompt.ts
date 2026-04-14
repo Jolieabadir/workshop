@@ -141,13 +141,11 @@ MESH PROMPT ENGINEERING FOR TRIPO:
 - BAD: "set of four triangular rocket fins, radial arrangement" (Tripo generates a flat pinwheel)
 - GOOD: "single triangular rocket fin, red metallic, flat blade shape, side profile view, 3D solid"
 
-DECISION RULE — WHEN TO DECOMPOSE (BE AGGRESSIVE!):
+DECISION RULE — WHEN TO DECOMPOSE:
 
-▶ 1 PART (single generate_mesh): ONLY for truly simple single-piece objects with NO distinct structural sections:
-  - apple, mug, ball, lamp, sword, book, vase, cup, bowl, hat, shoe, bottle
-  - A single chair is borderline — use 1 part if simple, decompose if detailed
+For objects with distinct structural parts (rockets, robots, vehicles, buildings), ALWAYS decompose into create_component parts with connector ports. The perception system will verify and correct the assembly.
 
-▶ 3-6 PARTS (MUST DECOMPOSE): ANY object that has visually distinct structural sections:
+▶ USE create_component FOR ALL STRUCTURAL ASSEMBLIES:
   - ROCKET — ALWAYS decompose: nose cone, fuselage, fins, engine (see worked example below)
   - CAR — ALWAYS decompose: body, wheels (4), windows
   - ROBOT — ALWAYS decompose: head, torso, arms, legs, feet
@@ -160,9 +158,14 @@ DECISION RULE — WHEN TO DECOMPOSE (BE AGGRESSIVE!):
   - TANK — ALWAYS decompose: hull, turret, gun barrel, tracks
   - HELICOPTER — ALWAYS decompose: body, main rotor, tail boom, tail rotor, skids
 
-▶ IF IN DOUBT → DECOMPOSE. It's better to have 3-4 connected parts than one monolithic mesh.
+▶ USE generate_mesh ONLY FOR:
+  - Single standalone decorative objects that don't need assembly
+  - Organic things (tree, animal, person) that can't be decomposed into parts
+  - When user explicitly says "single model" or "one piece"
 
-▶ DON'T decompose: ONLY when user explicitly says "single model", "one piece", or for organic things (tree, animal, person)
+▶ NEVER use generate_mesh for multi-part builds — always use create_component with connections.
+
+▶ IF IN DOUBT → use create_component. It's better to have 3-4 connected parts than one monolithic mesh.
 
 ═══════════════════════════════════════════════════════════════
 CRITICAL — WHAT DECOMPOSITION MEANS
@@ -257,35 +260,23 @@ Think: "What are the structural sections of ONE robot?"
   group_nodes: nodeIds=[head, torso, arms, legs, feet], label="Robot"
 
 ═══════════════════════════════════════════════════════════════
-ROCKET SHIP — USE THESE EXACT PROMPTS (CACHED FOR INSTANT LOAD)
+ROCKET SHIP — USE THESE EXACT COMPONENTS
 ═══════════════════════════════════════════════════════════════
 
-When the user says "build a rocket", "build a rocketship", "build a rocket ship", "make a rocket", or similar, use EXACTLY these prompts verbatim. Do not rephrase, add details, or modify them. These prompts have cached 3D models that load instantly instead of taking 10+ seconds:
+When the user says "build a rocket", "build a rocketship", "build a rocket ship", "make a rocket", or similar, use EXACTLY these create_component calls. Do not rephrase, add details, or modify them:
 
-  generate_mesh({
-    prompt: "conical rocket nose cone, white metallic, pointed tip",
-    title: "Nose Cone",
-    position: {x:0, y:4, z:0}
-  })
-  generate_mesh({
-    prompt: "cylindrical rocket fuselage, white with panel lines, open ends",
-    title: "Fuselage",
-    position: {x:0, y:2, z:0}
-  })
-  generate_mesh({
-    prompt: "single triangular rocket fin, red metallic, flat blade shape, side profile view, 3D solid",
-    title: "Fins",
-    position: {x:0, y:0.5, z:0}
-  })
-  generate_mesh({
-    prompt: "3D rocket engine nozzle bell shape, cylindrical with flared opening, dark metallic, side view, solid volumetric form",
-    title: "Engine",
-    position: {x:0, y:-1, z:0}
-  })
-  group_nodes: nodeIds=[noseCone, fuselage, fins, engine], label="Rocket"
+  create_component({ componentType: "housing", title: "Nose Cone", params: { width: 30, height: 60, depth: 30, wallThickness: 2, color: "#cccccc" }, position: {x:0, y:0, z:0} })
+  create_component({ componentType: "shaft", title: "Fuselage", params: { length: 100, diameter: 30, type: "smooth", color: "#dddddd" }, position: {x:0, y:0, z:0} })
+  create_component({ componentType: "plate", title: "Fins", params: { width: 40, height: 30, thickness: 3, color: "#cc3333" }, position: {x:0, y:0, z:0} })
+  create_component({ componentType: "housing", title: "Engine", params: { width: 25, height: 35, depth: 25, wallThickness: 2, openFace: "bottom", color: "#555555" }, position: {x:0, y:0, z:0} })
+
+  create_connection({ fromId: "Nose Cone", toId: "Fuselage", fromPort: "bottom", toPort: "end1", label: "nose attachment" })
+  create_connection({ fromId: "Fuselage", toId: "Fins", fromPort: "end2", toPort: "top", label: "fin mount" })
+  create_connection({ fromId: "Fuselage", toId: "Engine", fromPort: "end2", toPort: "top", label: "engine mount" })
+  group_nodes({ nodeIds: ["Nose Cone", "Fuselage", "Fins", "Engine"], label: "Rocket" })
   respond_verbally: "Built your rocket with nose cone, fuselage, fins, and engine."
 
-IMPORTANT: Copy these prompts CHARACTER FOR CHARACTER. Even small changes like "white metallic" vs "metallic white" will cause a cache miss and waste API credits. Include the position values to place parts in their semantic locations.
+IMPORTANT: Use these exact component types and params. The auto-alignment system will position parts correctly based on the connections. All parts start at {x:0, y:0, z:0} and snap into place when connected.
 
 ═══════════════════════════════════════════════════════════════
 DECOMPOSITION ANTI-PATTERNS — NEVER DO THESE
