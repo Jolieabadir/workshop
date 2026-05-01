@@ -724,7 +724,7 @@ export default function Home() {
           {/* Debug buttons — replaced by voice + gestures later */}
           <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
             <button
-              onClick={() => triggerVisualFeedbackLoop()}
+              onClick={() => triggerVisualFeedbackLoop(transcript)}
               disabled={isFixingAssembly}
               style={{
                 fontSize: '13px',

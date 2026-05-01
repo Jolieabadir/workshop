@@ -59,7 +59,7 @@ export function TranscriptBar({
 
   const handleFixAssembly = async () => {
     if (isFixingAssembly) return;
-    const result = await triggerVisualFeedbackLoop();
+    const result = await triggerVisualFeedbackLoop(transcript);
     if (result.success) {
       console.log(`[FIX ASSEMBLY] Approved after ${result.iterations} iteration(s)`);
     } else {
