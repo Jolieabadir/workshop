@@ -35,6 +35,25 @@ const SharedWebcamProvider = dynamic(
   { ssr: false }
 );
 
+// Scatter mode for feedback loop stress testing
+const SCATTER_MODE = process.env.NEXT_PUBLIC_SCATTER_INITIAL === 'true';
+
+function scatterPosition(title: string): { x: number; y: number; z: number } {
+  // Deterministic hash of title to angle on a circle
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) {
+    hash = ((hash << 5) - hash) + title.charCodeAt(i);
+    hash |= 0;
+  }
+  const angle = (Math.abs(hash) % 360) * (Math.PI / 180);
+  const radius = 5;
+  return {
+    x: Math.cos(angle) * radius,
+    y: 0, // grounded — all parts at same y level
+    z: Math.sin(angle) * radius,
+  };
+}
+
 export default function Home() {
   const transcript = useCanvasStore((s) => s.transcript);
   const setTranscript = useCanvasStore((s) => s.setTranscript);
@@ -343,7 +362,17 @@ export default function Home() {
 
       for (const action of actions) {
         console.log('[PIPELINE] 4. Executing action:', action.type, action);
-        canvasStore.executeAction(action);
+
+        // Scatter mode: override create_component positions for feedback loop stress testing
+        let actionToExecute = action;
+        if (SCATTER_MODE && action.type === 'create_component') {
+          const original = action.position || { x: 0, y: 0, z: 0 };
+          const scattered = scatterPosition(action.title);
+          console.log(`[SCATTER] Overriding ${action.title}: (${original.x},${original.y},${original.z}) -> (${scattered.x.toFixed(2)}, 0, ${scattered.z.toFixed(2)})`);
+          actionToExecute = { ...action, position: scattered };
+        }
+
+        canvasStore.executeAction(actionToExecute);
 
         // Handle TTS for verbal responses - use Deepgram Aura for natural voice
         if (action.type === 'respond_verbally' && action.message) {

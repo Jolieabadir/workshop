@@ -32,3 +32,11 @@ produces a structured trace. Compare across configurations.
 Squash-merge to main when success criteria are met AND the changes
 are reviewable in a single PR. Do not let this branch accumulate
 noise — periodic rebases on main are fine.
+
+## Scatter Mode
+Set NEXT_PUBLIC_SCATTER_INITIAL=true in .env.local to spawn parts at
+scattered positions on the x/z plane instead of the Builder's
+semantic positions. Used for testing whether the feedback loop can
+assemble parts from disordered initial states. Each part's scatter
+position is deterministic — same title hashes to same position
+across trials.
