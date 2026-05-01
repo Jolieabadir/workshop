@@ -224,7 +224,21 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set((s) => ({
       nodes: {
         ...s.nodes,
-        [id]: { id, type, shape, content, title, position: pos, createdAt: now, updatedAt: now },
+        [id]: {
+          id,
+          type,
+          shape,
+          content,
+          title,
+          position: pos,
+          createdAt: now,
+          updatedAt: now,
+          // Initialize metadata with defaults so Mechanic can read current state
+          metadata: {
+            rotation: { x: 0, y: 0, z: 0 },
+            uniformScale: 1,
+          },
+        },
       },
       focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
     }));
@@ -251,6 +265,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       rotation,
     };
 
+    // Use provided rotation or default to zero
+    const initialRotation = rotation ?? { x: 0, y: 0, z: 0 };
+
     set((s) => ({
       nodes: {
         ...s.nodes,
@@ -264,6 +281,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           createdAt: now,
           updatedAt: now,
           component: componentData,
+          // Initialize metadata with defaults so Mechanic can read current state
+          metadata: {
+            rotation: initialRotation,
+            uniformScale: 1,
+          },
         },
       },
       focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
@@ -316,6 +338,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           meshLoading: true,
           color: '#888888',
           virtualPorts, // Store virtual ports for mesh connections
+          // Initialize metadata with defaults so Mechanic can read current state
+          metadata: {
+            rotation: { x: 0, y: 0, z: 0 },
+            uniformScale: 1,
+          },
         },
       },
       focusStack: [id, ...s.focusStack.filter((x) => x !== id)].slice(0, 20),
