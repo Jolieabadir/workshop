@@ -544,8 +544,30 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   addConnection: (fromId, toId, label, fromPort, toPort) => {
     const id = uid();
     const state = get();
-    const fromNode = state.nodes[fromId];
-    const toNode = state.nodes[toId];
+
+    // Resolve node references (titles or IDs) to actual node IDs
+    function resolveNodeRef(ref: string): string | null {
+      // Direct ID match
+      if (state.nodes[ref]) return ref;
+      // Title fallback
+      const byTitle = Object.values(state.nodes).find(n => n.title === ref);
+      if (byTitle) {
+        console.warn(`[CANVAS] addConnection: resolved title "${ref}" to ID "${byTitle.id}" — Builder should pass IDs`);
+        return byTitle.id;
+      }
+      return null;
+    }
+
+    const resolvedFromId = resolveNodeRef(fromId);
+    const resolvedToId = resolveNodeRef(toId);
+
+    if (!resolvedFromId || !resolvedToId) {
+      console.error(`[CANVAS] addConnection: cannot resolve fromId="${fromId}" or toId="${toId}" — connection NOT created`);
+      return id; // Return id to satisfy type, but connection is not created
+    }
+
+    const fromNode = state.nodes[resolvedFromId];
+    const toNode = state.nodes[resolvedToId];
 
     // Auto-align: if both ports specified and both nodes have components, snap them together
     if (fromPort && toPort && fromNode?.component && toNode?.component) {
@@ -579,19 +601,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         console.log(`[AUTO-ALIGN]   From port world: (${fromWorld.x.toFixed(2)}, ${fromWorld.y.toFixed(2)}, ${fromWorld.z.toFixed(2)})`);
         console.log(`[AUTO-ALIGN]   Moving "${toNode.title}" from (${toNode.position.x.toFixed(2)}, ${toNode.position.y.toFixed(2)}, ${toNode.position.z.toFixed(2)}) to (${newPosition.x.toFixed(2)}, ${newPosition.y.toFixed(2)}, ${newPosition.z.toFixed(2)})`);
 
-        // Update the target node's position
+        // Update the target node's position (use resolved ID)
         set((s) => ({
           nodes: {
             ...s.nodes,
-            [toId]: { ...s.nodes[toId], position: newPosition, updatedAt: Date.now() },
+            [resolvedToId]: { ...s.nodes[resolvedToId], position: newPosition, updatedAt: Date.now() },
           },
         }));
       }
     }
 
-    // Store the connection
+    // Store the connection with resolved UUIDs
     set((s) => ({
-      connections: { ...s.connections, [id]: { id, fromId, toId, fromPort, toPort, label } },
+      connections: { ...s.connections, [id]: { id, fromId: resolvedFromId, toId: resolvedToId, fromPort, toPort, label } },
     }));
     return id;
   },
