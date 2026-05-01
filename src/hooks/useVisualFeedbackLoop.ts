@@ -605,8 +605,87 @@ export function useVisualFeedbackLoop() {
           console.log(`[FEEDBACK LOOP] Geometry analysis: ${geometryAnalysis.parts.length} parts with exact 3D measurements`);
         }
 
-        // Step 3: Get Owl evaluation (uses image strings only)
+        // Get canvas state for diagnostic and Owl evaluation
         const canvasState = getCanvasState();
+
+        // ─────────────────────────────────────────────────────────────────────
+        // DIAGNOSTIC LOGGING — Per-iteration perception layer snapshot
+        // ─────────────────────────────────────────────────────────────────────
+        console.group(`[FEEDBACK LOOP DIAGNOSTIC — Iteration ${iteration}]`);
+
+        // 1. Builder-placed nodes: id, title, position, rotation, scale
+        console.log('📦 BUILDER-PLACED NODES:');
+        for (const [nodeId, node] of Object.entries(canvasState.nodes)) {
+          const rotation = (node.metadata?.rotation as { x?: number; y?: number; z?: number }) || { x: 0, y: 0, z: 0 };
+          const scale = (node.metadata?.uniformScale as number) ?? 1;
+          console.log(
+            `  • ${node.title || node.content.slice(0, 20)} (${nodeId})\n` +
+            `    position: {x: ${node.position.x.toFixed(3)}, y: ${node.position.y.toFixed(3)}, z: ${node.position.z.toFixed(3)}}\n` +
+            `    rotation: {x: ${(rotation.x ?? 0).toFixed(1)}°, y: ${(rotation.y ?? 0).toFixed(1)}°, z: ${(rotation.z ?? 0).toFixed(1)}°}\n` +
+            `    scale: ${scale.toFixed(2)}`
+          );
+        }
+
+        // 2. Geometry analyzer gap data for each connection
+        console.log('📐 GEOMETRY ANALYZER GAP DATA:');
+        if (geometryAnalysis && geometryAnalysis.connections.length > 0) {
+          for (const conn of geometryAnalysis.connections) {
+            console.log(
+              `  • ${conn.fromTitle} ↔ ${conn.toTitle}\n` +
+              `    fromId: ${conn.fromId}, toId: ${conn.toId}\n` +
+              `    gap.distance: ${conn.gap.distance.toFixed(4)} units\n` +
+              `    gap.direction: {x: ${conn.gap.direction.x.toFixed(2)}, y: ${conn.gap.direction.y.toFixed(2)}, z: ${conn.gap.direction.z.toFixed(2)}}\n` +
+              `    overlapping: ${conn.overlapping}\n` +
+              `    overlapAmount: ${conn.overlapAmount.toFixed(4)} units`
+            );
+          }
+        } else {
+          console.log('  (no connections to analyze)');
+        }
+
+        // 3. CV metrics summary
+        console.log('👁️ CV METRICS SUMMARY:');
+        if (cvMetrics) {
+          console.log(`  Parts detected: ${cvMetrics.parts?.length ?? 0}`);
+          if (cvMetrics.gaps && cvMetrics.gaps.length > 0) {
+            console.log('  Gap entries (pixel counts):');
+            for (const gap of cvMetrics.gaps) {
+              console.log(`    • ${gap.fromId} ↔ ${gap.toId}: ${gap.gapPixels}px`);
+            }
+          } else {
+            console.log('  Gap entries: (none)');
+          }
+          if (cvMetrics.parts && cvMetrics.parts.length > 0) {
+            const partsWithOrientation = cvMetrics.parts.filter(p => p.orientationDeg !== undefined);
+            if (partsWithOrientation.length > 0) {
+              console.log('  Orientation estimates:');
+              for (const part of partsWithOrientation) {
+                const confidence = Math.min(0.9, 0.5 + Math.abs(part.orientationDeg!) / 180);
+                console.log(`    • ${part.nodeId}: ${part.orientationDeg!.toFixed(1)}° (confidence: ${confidence.toFixed(2)})`);
+              }
+            } else {
+              console.log('  Orientation estimates: (none)');
+            }
+          }
+          if (cvMetrics.overallCoherence !== undefined) {
+            console.log(`  Overall coherence: ${cvMetrics.overallCoherence.toFixed(2)}`);
+          }
+        } else {
+          console.log('  (CV analysis unavailable)');
+        }
+
+        // 4. User request passthrough
+        console.log('📝 USER REQUEST:');
+        if (requestContext) {
+          console.log(`  Passed: YES\n  Value: "${requestContext}"`);
+        } else {
+          console.log('  Passed: NO');
+        }
+
+        console.groupEnd();
+        // ─────────────────────────────────────────────────────────────────────
+
+        // Step 3: Get Owl evaluation (uses image strings only)
         const owlEvaluation = await getOwlEvaluation(frameImages, cvMetrics, canvasState, geometryAnalysis, requestContext);
 
         if (!owlEvaluation) {
