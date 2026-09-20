@@ -4,6 +4,10 @@
 
 > Spatial intelligence is not a property of a model. It's a property of a system.
 
+![Three parametric parts snapping together into a rocket by their connector ports](https://www.jolieabadir.com/img/workshop/port-assembly.gif)
+
+*Port-based assembly in the running app: parts are created apart, then each connection repositions the target so the two ports meet. This clip replays the canvas calls directly, without voice or the agents.*
+
 Status: research prototype. The core loop works end to end. See [What works and what doesn't](#what-works-and-what-doesnt) for an honest account.
 
 Built solo by [Jolie Abadir](https://www.jolieabadir.com/workshop), April 2026 to present.
